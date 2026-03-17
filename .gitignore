@@ -12,6 +12,10 @@
 # Local History for Visual Studio Code
 .history/
 
+### GameIcons ###
+# Generated ICO cache — safe to delete, rebuilt on next run
+UwpIconCache/
+
 # Built Visual Studio Code Extensions
 *.vsix
 
