@@ -441,6 +441,18 @@ if (-not (Test-Path $SteamInstall)) {
     $libs  = Get-SteamLibraryPaths -SteamInstall $SteamInstall
     $games = Get-SteamAppManifests -LibraryPaths $libs
 
+    $installedSteamNames = $games | ForEach-Object { Get-SafeFilename -Name $_.Name }
+    if (Test-Path $SteamMenu) {
+        Get-ChildItem $SteamMenu -Filter '*.url' | ForEach-Object {
+            if ($installedSteamNames -notcontains $_.BaseName) {
+                Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
+                if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
+                    Remove-Item -LiteralPath $_.FullName -Force
+                }
+            }
+        }
+    }
+
     foreach ($game in ($games | Sort-Object Name)) {
         $safeName     = Get-SafeFilename -Name $game.Name
         $shortcutPath = Join-Path $SteamMenu "$safeName.url"
@@ -523,6 +535,18 @@ if (-not (Test-Path $EpicManifests)) {
         }
     }
 
+    $installedEpicNames = $games | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
+    if (Test-Path $EpicMenu) {
+        Get-ChildItem $EpicMenu -Filter '*.url' | ForEach-Object {
+            if ($installedEpicNames -notcontains $_.BaseName) {
+                Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
+                if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
+                    Remove-Item -LiteralPath $_.FullName -Force
+                }
+            }
+        }
+    }
+
     foreach ($game in ($games | Sort-Object DisplayName)) {
         $safeName     = Get-SafeFilename -Name $game.DisplayName
         $shortcutPath = Join-Path $EpicMenu "$safeName.url"
@@ -569,6 +593,18 @@ if ($xboxGames.Count -eq 0) {
     if (-not (Test-Path $XboxMenu)) {
         if ($PSCmdlet.ShouldProcess($XboxMenu, 'Create directory')) {
             New-Item -ItemType Directory -Path $XboxMenu | Out-Null
+        }
+    }
+
+    $installedXboxNames = $xboxGames | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
+    if (Test-Path $XboxMenu) {
+        Get-ChildItem $XboxMenu -Filter '*.lnk' | ForEach-Object {
+            if ($installedXboxNames -notcontains $_.BaseName) {
+                Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
+                if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
+                    Remove-Item -LiteralPath $_.FullName -Force
+                }
+            }
         }
     }
 
@@ -673,6 +709,18 @@ if ($storeGames.Count -eq 0) {
     if (-not (Test-Path $MsStoreMenu)) {
         if ($PSCmdlet.ShouldProcess($MsStoreMenu, 'Create directory')) {
             New-Item -ItemType Directory -Path $MsStoreMenu | Out-Null
+        }
+    }
+
+    $installedStoreNames = $storeGames | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
+    if (Test-Path $MsStoreMenu) {
+        Get-ChildItem $MsStoreMenu -Filter '*.lnk' | ForEach-Object {
+            if ($installedStoreNames -notcontains $_.BaseName) {
+                Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
+                if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
+                    Remove-Item -LiteralPath $_.FullName -Force
+                }
+            }
         }
     }
 
