@@ -24,6 +24,32 @@ Supports:
 .\Update-GameIcons.ps1
 ```
 
+Put all generated shortcuts into a dedicated Games Start Menu folder:
+
+```powershell
+.\Update-GameIcons.ps1 -UseGamesFolderForAll
+```
+
+This defaults to:
+
+```text
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Games
+```
+
+Choose a custom final destination folder:
+
+```powershell
+.\Update-GameIcons.ps1 -UseGamesFolderForAll -GamesMenu "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\My Games"
+```
+
+Legacy mode (puts non-Steam shortcuts in Steam folder):
+
+```powershell
+.\Update-GameIcons.ps1 -UseSteamFolderForAll
+```
+
+If both switches are provided, `-UseGamesFolderForAll` takes precedence.
+
 Preview changes without writing anything:
 
 ```powershell
@@ -36,6 +62,9 @@ Preview changes without writing anything:
 |---|---|---|
 | `SteamInstall` | `C:\Program Files (x86)\Steam` | Path to your Steam installation |
 | `SteamMenu` | `%APPDATA%\...\Programs\Steam` | Start Menu folder for Steam shortcuts |
+| `UseGamesFolderForAll` | `False` | Routes Steam/Epic/Xbox/Microsoft Store shortcuts into the folder set by `GamesMenu` |
+| `GamesMenu` | `%APPDATA%\...\Programs\Games` | Final destination folder used when `UseGamesFolderForAll` is enabled |
+| `UseSteamFolderForAll` | `False` | Legacy: routes Epic/Xbox/Microsoft Store shortcuts into the same folder as `SteamMenu` |
 | `EpicMenu` | `%APPDATA%\...\Programs\Epic Games` | Start Menu folder for Epic shortcuts |
 | `EpicManifests` | `C:\ProgramData\Epic\...\Manifests` | Path to Epic launcher manifests |
 | `XboxMenu` | `%APPDATA%\...\Programs\Xbox` | Start Menu folder for Xbox shortcuts |
@@ -97,6 +126,7 @@ Each game is reported with one of these statuses:
 | `[CREATE]` | Shortcut did not exist — created |
 | `[OK]` | Shortcut exists with a valid icon |
 | `[FIX]` | Shortcut existed but had a broken or outdated icon path — fixed |
+| `[REMOVE]` | Shortcut exists for a game no longer installed — removed |
 | `[SKIP]` | Could not create/fix — no icon source or executable found |
 
 ---

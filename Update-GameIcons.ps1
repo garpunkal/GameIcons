@@ -41,6 +41,19 @@
 .PARAMETER SteamMenu
     Path to the Steam Start Menu programs folder.
 
+.PARAMETER UseGamesFolderForAll
+    If set, routes Steam, Epic, Xbox Game Pass, and Microsoft Store shortcuts
+    to a single folder defined by -GamesMenu.
+
+.PARAMETER GamesMenu
+    Start Menu folder used when -UseGamesFolderForAll is set.
+    Default: %APPDATA%\Microsoft\Windows\Start Menu\Programs\Games
+
+.PARAMETER UseSteamFolderForAll
+    If set, routes Epic, Xbox Game Pass, and Microsoft Store shortcuts to the
+    same Start Menu folder as Steam (-SteamMenu). Kept for backward
+    compatibility; prefer -UseGamesFolderForAll for new setups.
+
 .PARAMETER EpicMenu
     Path to the Epic Games Start Menu programs folder.
 
@@ -75,6 +88,9 @@
 param(
     [string]$SteamInstall    = 'C:\Program Files (x86)\Steam',
     [string]$SteamMenu       = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Steam",
+    [switch]$UseGamesFolderForAll,
+    [string]$GamesMenu       = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Games",
+    [switch]$UseSteamFolderForAll,
     [string]$EpicMenu        = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Epic Games",
     [string]$EpicManifests   = 'C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests',
     [string]$XboxMenu        = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Xbox",
@@ -91,6 +107,27 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
+
+# New preferred mode: place all shortcuts in an explicit Games folder.
+if ($UseGamesFolderForAll) {
+    $SteamMenu   = $GamesMenu
+    $EpicMenu    = $GamesMenu
+    $XboxMenu    = $GamesMenu
+    $MsStoreMenu = $GamesMenu
+}
+
+# Convenience switch to place all generated shortcuts in the Steam menu folder.
+if ($UseSteamFolderForAll -and -not $UseGamesFolderForAll) {
+    $EpicMenu    = $SteamMenu
+    $XboxMenu    = $SteamMenu
+    $MsStoreMenu = $SteamMenu
+}
+
+Write-Host "Shortcut destinations:" -ForegroundColor DarkGray
+Write-Host "  Steam:          $SteamMenu" -ForegroundColor DarkGray
+Write-Host "  Epic Games:     $EpicMenu" -ForegroundColor DarkGray
+Write-Host "  Xbox Game Pass: $XboxMenu" -ForegroundColor DarkGray
+Write-Host "  Microsoft Store:$MsStoreMenu" -ForegroundColor DarkGray
 
 #region Helpers
 
@@ -257,11 +294,19 @@ function Get-UwpLogoPath {
     $subDir   = [System.IO.Path]::GetDirectoryName($LogoRelPath)
     $assetDir = Join-Path $InstallLocation $subDir
     foreach ($scale in @('scale-400','scale-200','scale-150','scale-125','scale-100')) {
+        # Flat naming: Assets\Logo.scale-400.png
         $candidate = Join-Path $assetDir "$baseName.$scale$ext"
+        if (Test-Path $candidate) { return $candidate }
+        # Subfolder naming: Assets\scale-400\Logo.png
+        $candidate = Join-Path $assetDir "$scale\$baseName$ext"
         if (Test-Path $candidate) { return $candidate }
     }
     foreach ($size in @(256, 96, 48)) {
+        # Flat naming: Assets\Logo.targetsize-256.png
         $candidate = Join-Path $assetDir "$baseName.targetsize-$size$ext"
+        if (Test-Path $candidate) { return $candidate }
+        # Subfolder naming: Assets\targetsize-256\Logo.png
+        $candidate = Join-Path $assetDir "targetsize-$size\$baseName$ext"
         if (Test-Path $candidate) { return $candidate }
     }
     $plain = Join-Path $assetDir "$baseName$ext"
@@ -430,7 +475,7 @@ function Get-SteamAppManifests {
 Write-Host "`n=== Steam ===" -ForegroundColor Cyan
 
 if (-not (Test-Path $SteamInstall)) {
-    Write-Warning "Steam not found at: $SteamInstall"
+    Write-Host "  [SKIP]    Steam not found at: $SteamInstall" -ForegroundColor DarkYellow
 } else {
     if (-not (Test-Path $SteamMenu)) {
         if ($PSCmdlet.ShouldProcess($SteamMenu, 'Create directory')) {
@@ -444,6 +489,11 @@ if (-not (Test-Path $SteamInstall)) {
     $installedSteamNames = $games | ForEach-Object { Get-SafeFilename -Name $_.Name }
     if (Test-Path $SteamMenu) {
         Get-ChildItem $SteamMenu -Filter '*.url' | ForEach-Object {
+            # In shared folders, only clean up Steam-owned .url shortcuts.
+            $raw = [System.IO.File]::ReadAllText($_.FullName)
+            $isSteamShortcut = $raw -match '(?m)^URL=steam://rungameid/'
+            if (-not $isSteamShortcut) { return }
+
             if ($installedSteamNames -notcontains $_.BaseName) {
                 Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
                 if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
@@ -470,7 +520,7 @@ if (-not (Test-Path $SteamInstall)) {
                 Write-Host "  [CREATE]  $($game.Name)" -ForegroundColor Green
                 Write-UrlFile -Path $shortcutPath -Url $url -IconFile $icoPath
             } else {
-                Write-Warning "  [SKIP]    $($game.Name) (AppID $($game.AppId)) - no icon found in library cache"
+                Write-Host "  [SKIP]    $($game.Name) (AppID $($game.AppId)) - no icon found in library cache" -ForegroundColor DarkYellow
             }
         } else {
             # -- Shortcut exists: check icon is still valid
@@ -482,7 +532,7 @@ if (-not (Test-Path $SteamInstall)) {
                 Write-Host "  [FIX]     $($game.Name)" -ForegroundColor Yellow
                 Set-UrlIconFile -Path $shortcutPath -IconFile $icoPath
             } else {
-                Write-Warning "  [SKIP]    $($game.Name) (AppID $($game.AppId)) - broken icon, no cache source"
+                Write-Host "  [SKIP]    $($game.Name) (AppID $($game.AppId)) - broken icon, no cache source" -ForegroundColor DarkYellow
             }
         }
     }
@@ -494,7 +544,7 @@ if (-not (Test-Path $SteamInstall)) {
 Write-Host "`n=== Epic Games ===" -ForegroundColor Cyan
 
 if (-not (Test-Path $EpicManifests)) {
-    Write-Warning "Epic manifests not found at: $EpicManifests"
+    Write-Host "  [SKIP]    Epic manifests not found at: $EpicManifests" -ForegroundColor DarkYellow
 } else {
     if (-not (Test-Path $EpicMenu)) {
         if ($PSCmdlet.ShouldProcess($EpicMenu, 'Create directory')) {
@@ -509,7 +559,7 @@ if (-not (Test-Path $EpicManifests)) {
         try {
             $m = Get-Content $_.FullName | ConvertFrom-Json
         } catch {
-            Write-Warning "  Could not parse manifest: $($_.Name)"
+            Write-Host "  [SKIP]    Could not parse manifest: $($_.Name)" -ForegroundColor DarkYellow
             return
         }
 
@@ -538,6 +588,11 @@ if (-not (Test-Path $EpicManifests)) {
     $installedEpicNames = $games | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
     if (Test-Path $EpicMenu) {
         Get-ChildItem $EpicMenu -Filter '*.url' | ForEach-Object {
+            # In shared folders, only clean up Epic-owned .url shortcuts.
+            $raw = [System.IO.File]::ReadAllText($_.FullName)
+            $isEpicShortcut = $raw -match '(?m)^URL=com\.epicgames\.launcher://apps/'
+            if (-not $isEpicShortcut) { return }
+
             if ($installedEpicNames -notcontains $_.BaseName) {
                 Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
                 if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
@@ -561,7 +616,7 @@ if (-not (Test-Path $EpicManifests)) {
                 Write-Host "  [CREATE]  $($game.DisplayName)" -ForegroundColor Green
                 Write-UrlFile -Path $shortcutPath -Url $game.LaunchUrl -IconFile $iconFile -WorkingDir $game.WorkingDir
             } else {
-                Write-Warning "  [SKIP]    $($game.DisplayName) - exe not found at: $($game.ExePath)"
+                Write-Host "  [SKIP]    $($game.DisplayName) - exe not found at: $($game.ExePath)" -ForegroundColor DarkYellow
             }
         } else {
             # -- Shortcut exists: check icon is still valid
@@ -574,7 +629,7 @@ if (-not (Test-Path $EpicManifests)) {
                 Write-Host "  [FIX]     $($game.DisplayName)" -ForegroundColor Yellow
                 Set-UrlIconFile -Path $shortcutPath -IconFile $iconFile
             } else {
-                Write-Warning "  [SKIP]    $($game.DisplayName) - broken icon, exe not found: $($game.ExePath)"
+                Write-Host "  [SKIP]    $($game.DisplayName) - broken icon, exe not found: $($game.ExePath)" -ForegroundColor DarkYellow
             }
         }
     }
@@ -586,9 +641,10 @@ if (-not (Test-Path $EpicManifests)) {
 Write-Host "`n=== Xbox Game Pass ===" -ForegroundColor Cyan
 
 $xboxGames = @(Get-UwpGameList -XboxOnly | Sort-Object DisplayName)
+$installedXboxNames = @()
 
 if ($xboxGames.Count -eq 0) {
-    Write-Warning "  No Xbox Game Pass titles found (requires the Xbox app with installed games)."
+    Write-Host "  [SKIP]    No Xbox Game Pass titles found (requires the Xbox app with installed games)." -ForegroundColor DarkYellow
 } else {
     if (-not (Test-Path $XboxMenu)) {
         if ($PSCmdlet.ShouldProcess($XboxMenu, 'Create directory')) {
@@ -598,11 +654,15 @@ if ($xboxGames.Count -eq 0) {
 
     $installedXboxNames = $xboxGames | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
     if (Test-Path $XboxMenu) {
-        Get-ChildItem $XboxMenu -Filter '*.lnk' | ForEach-Object {
-            if ($installedXboxNames -notcontains $_.BaseName) {
-                Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
-                if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
-                    Remove-Item -LiteralPath $_.FullName -Force
+        # If Xbox and Store share a folder, removal is handled once in the Store
+        # section against a combined installed set to avoid cross-deleting links.
+        if ($XboxMenu -ne $MsStoreMenu) {
+            Get-ChildItem $XboxMenu -Filter '*.lnk' | ForEach-Object {
+                if ($installedXboxNames -notcontains $_.BaseName) {
+                    Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
+                    if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
+                        Remove-Item -LiteralPath $_.FullName -Force
+                    }
                 }
             }
         }
@@ -628,7 +688,7 @@ if ($xboxGames.Count -eq 0) {
                     -Arguments "shell:AppsFolder\$aumId" `
                     -IconFile $icoPath -Description $game.DisplayName
             } else {
-                Write-Warning "  [SKIP]    $($game.DisplayName) - no icon found"
+                Write-Host "  [SKIP]    $($game.DisplayName) - no icon found" -ForegroundColor DarkYellow
             }
         } else {
             $ws      = New-Object -ComObject WScript.Shell
@@ -641,7 +701,7 @@ if ($xboxGames.Count -eq 0) {
                 Write-Host "  [FIX]     $($game.DisplayName)" -ForegroundColor Yellow
                 Set-LnkIconFile -Path $shortcutPath -IconFile $icoPath
             } else {
-                Write-Warning "  [SKIP]    $($game.DisplayName) - broken icon, no source available"
+                Write-Host "  [SKIP]    $($game.DisplayName) - broken icon, no source available" -ForegroundColor DarkYellow
             }
         }
     }
@@ -714,8 +774,14 @@ if ($storeGames.Count -eq 0) {
 
     $installedStoreNames = $storeGames | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
     if (Test-Path $MsStoreMenu) {
+        # Shared Xbox+Store folder cleanup: keep anything installed in either list.
+        $installedSharedNames = $installedStoreNames
+        if ($MsStoreMenu -eq $XboxMenu) {
+            $installedSharedNames = @($installedStoreNames + $installedXboxNames) | Select-Object -Unique
+        }
+
         Get-ChildItem $MsStoreMenu -Filter '*.lnk' | ForEach-Object {
-            if ($installedStoreNames -notcontains $_.BaseName) {
+            if ($installedSharedNames -notcontains $_.BaseName) {
                 Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
                 if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
                     Remove-Item -LiteralPath $_.FullName -Force
@@ -744,7 +810,7 @@ if ($storeGames.Count -eq 0) {
                     -Arguments "shell:AppsFolder\$aumId" `
                     -IconFile $icoPath -Description $game.DisplayName
             } else {
-                Write-Warning "  [SKIP]    $($game.DisplayName) - no icon found"
+                Write-Host "  [SKIP]    $($game.DisplayName) - no icon found" -ForegroundColor DarkYellow
             }
         } else {
             $ws      = New-Object -ComObject WScript.Shell
@@ -757,7 +823,7 @@ if ($storeGames.Count -eq 0) {
                 Write-Host "  [FIX]     $($game.DisplayName)" -ForegroundColor Yellow
                 Set-LnkIconFile -Path $shortcutPath -IconFile $icoPath
             } else {
-                Write-Warning "  [SKIP]    $($game.DisplayName) - broken icon, no source available"
+                Write-Host "  [SKIP]    $($game.DisplayName) - broken icon, no source available" -ForegroundColor DarkYellow
             }
         }
     }
