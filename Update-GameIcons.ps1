@@ -266,6 +266,7 @@ function Get-Settings {
         uwpServicePackageNames    = @()
         msPublisherPrefixes       = @()
         steamGridDbExcludedIconIds = @{}
+        steamGridDbPreferredIconIds = @{}
         includeStorePackages      = @()
     }
     if (-not $Path -or -not (Test-Path $Path)) { return $defaults }
@@ -289,6 +290,15 @@ function Get-Settings {
             $map[$prop.Name] = @($prop.Value | ForEach-Object { [string]$_ })
         }
         $defaults['steamGridDbExcludedIconIds'] = $map
+    }
+    # Map: steamGridDbPreferredIconIds -> hashtable of appId -> string iconId
+    if ($json.PSObject.Properties['steamGridDbPreferredIconIds']) {
+        $map = @{}
+        $obj = $json.steamGridDbPreferredIconIds
+        foreach ($prop in $obj.PSObject.Properties) {
+            $map[$prop.Name] = [string]$prop.Value
+        }
+        $defaults['steamGridDbPreferredIconIds'] = $map
     }
     return $defaults
 }
@@ -364,8 +374,15 @@ function Get-SteamGridDbIcoPath {
         $excludedIds = @($script:SteamGridDbExcludedIconIdsByAppId[$AppId] | ForEach-Object { [string]$_ })
     }
 
+    $preferredId = ''
+    if ($script:SteamGridDbPreferredIconIdsByAppId -and $script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($AppId)) {
+        $preferredId = [string]$script:SteamGridDbPreferredIconIdsByAppId[$AppId]
+    }
+
     $cachedCandidates = Get-ChildItem $CachePath -Filter "$SafeName.sgdb*.ico" -ErrorAction SilentlyContinue
-    if ($excludedIds.Count -gt 0) {
+    if ($preferredId) {
+        $cachedCandidates = $cachedCandidates | Where-Object { $_.BaseName -match "\.sgdb\.$preferredId$" }
+    } elseif ($excludedIds.Count -gt 0) {
         $cachedCandidates = $cachedCandidates | Where-Object {
             if ($_.BaseName -match '\.sgdb\.(\d+)$') {
                 return ($excludedIds -notcontains $matches[1])
@@ -392,6 +409,18 @@ function Get-SteamGridDbIcoPath {
     $headers = @{ Authorization = "Bearer $ApiKey" }
 
     $resp = $null
+
+    if ($preferredId) {
+        $prefUrl = "https://www.steamgriddb.com/api/v2/icons/${preferredId}"
+        try {
+            $prefResp = Invoke-RestMethod -Method Get -Uri $prefUrl -Headers $headers -ErrorAction Stop
+            if ($prefResp -and $prefResp.success -and $prefResp.data) {
+                $resp = [PSCustomObject]@{ success = $true; data = @($prefResp.data) }
+            }
+        } catch {
+            Write-Host "  [WARN]    SteamGridDB lookup failed for preferred icon $preferredId (AppID $AppId). Falling back." -ForegroundColor DarkYellow
+        }
+    }
 
     if (-not $resp) {
         $apiUrl = "https://www.steamgriddb.com/api/v2/icons/steam/${AppId}?styles=${Styles}&types=static&mimes=image/vnd.microsoft.icon,image/png&sort=score&order=desc&limit=20"
@@ -425,9 +454,12 @@ function Get-SteamGridDbIcoPath {
         return $null
     }
 
-    # Prefer official art when available, then highest score/upvotes.
+
+
+    # Prefer explicitly preferred art when available, then official art, then highest score/upvotes.
     $candidate = $candidates |
-                 Sort-Object @{ Expression = { if ($_.style -eq 'official') { 0 } else { 1 } } },
+                 Sort-Object @{ Expression = { $id = if ($_.id) { [string]$_.id } else { '' }; if ($preferredId -and $id -eq $preferredId) { 0 } else { 1 } } },
+                             @{ Expression = { if ($_.style -eq 'official') { 0 } else { 1 } } },
                              @{ Expression = { if ($_.score) { [double]$_.score } else { 0 } }; Descending = $true },
                              @{ Expression = { if ($_.upvotes) { [int]$_.upvotes } else { 0 } }; Descending = $true } |
                  Select-Object -First 1
@@ -721,10 +753,11 @@ function Get-UwpGameList {
 
 # Load consolidated settings
 $script:Settings = Get-Settings -Path $SettingsPath
-$script:SteamNonGameIds                  = $script:Settings.steamNonGameIds
+$script:SteamNonGameIds                   = $script:Settings.steamNonGameIds
 $script:UwpServicePackageNames            = $script:Settings.uwpServicePackageNames
 $script:MsPublisherPrefixes               = $script:Settings.msPublisherPrefixes
-$script:SteamGridDbExcludedIconIdsByAppId  = $script:Settings.steamGridDbExcludedIconIds
+$script:SteamGridDbExcludedIconIdsByAppId = $script:Settings.SteamGridDbExcludedIconIds
+$script:SteamGridDbPreferredIconIdsByAppId = $script:Settings.SteamGridDbPreferredIconIds
 
 function Get-SteamAppManifests {
     param([string[]]$LibraryPaths)
@@ -906,16 +939,15 @@ if (-not (Test-Path $EpicManifests)) {
 
     $installedEpicNames = $games | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
     if (Test-Path $EpicMenu) {
-        Get-ChildItem $EpicMenu -Filter '*.url' | ForEach-Object {
-            # In shared folders, only clean up Epic-owned .url shortcuts.
-            $raw = [System.IO.File]::ReadAllText($_.FullName)
-            $isEpicShortcut = $raw -match '(?m)^URL=com\.epicgames\.launcher://apps/'
-            if (-not $isEpicShortcut) { return }
-
-            if ($installedEpicNames -notcontains $_.BaseName) {
-                Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
-                if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
-                    Remove-Item -LiteralPath $_.FullName -Force
+        # If Xbox and Store share a folder, removal is handled once in the Store
+        # section against a combined installed set to avoid cross-deleting links.
+        if ($EpicMenu -ne $MsStoreMenu) {
+            Get-ChildItem $EpicMenu -Filter '*.url' | ForEach-Object {
+                if ($installedEpicNames -notcontains $_.BaseName) {
+                    Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
+                    if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
+                        Remove-Item -LiteralPath $_.FullName -Force
+                    }
                 }
             }
         }
@@ -927,6 +959,12 @@ if (-not (Test-Path $EpicManifests)) {
 
         # Custom override takes priority; fall back to the game exe
         $customIco = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
+        if (-not $customIco -and $UseSteamGridDb) {
+            $sgdbKey = if ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($game.DisplayName)) { $game.DisplayName } elseif ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($safeName)) { $safeName } else { $null }
+            if ($sgdbKey) {
+                $customIco = Get-SteamGridDbIcoPath -AppId $sgdbKey -SafeName "epic.$safeName" -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache -Refresh:$RefreshSteamGridDb
+            }
+        }
         $iconFile  = if ($customIco) { $customIco } else { $game.ExePath }
 
         if (-not (Test-Path $shortcutPath)) {
@@ -993,6 +1031,12 @@ if ($xboxGames.Count -eq 0) {
         $aumId        = "$($game.PackageFamilyName)!$($game.AppId)"
 
         $customIco = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
+        if (-not $customIco -and $UseSteamGridDb) {
+            $sgdbKey = if ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($game.DisplayName)) { $game.DisplayName } elseif ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($safeName)) { $safeName } else { $null }
+            if ($sgdbKey) {
+                $customIco = Get-SteamGridDbIcoPath -AppId $sgdbKey -SafeName "xbox.$safeName" -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache -Refresh:$RefreshSteamGridDb
+            }
+        }
         $icoPath   = if ($customIco) { $customIco } else {
             Get-UwpIcoPath -PackageFamilyName $game.PackageFamilyName `
                            -InstallLocation   $game.InstallLocation `
@@ -1113,6 +1157,12 @@ if ($storeGames.Count -eq 0) {
         $aumId        = "$($game.PackageFamilyName)!$($game.AppId)"
 
         $customIco = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
+        if (-not $customIco -and $UseSteamGridDb) {
+            $sgdbKey = if ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($game.DisplayName)) { $game.DisplayName } elseif ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($safeName)) { $safeName } else { $null }
+            if ($sgdbKey) {
+                $customIco = Get-SteamGridDbIcoPath -AppId $sgdbKey -SafeName "msstore.$safeName" -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache -Refresh:$RefreshSteamGridDb
+            }
+        }
         $icoPath   = if ($customIco) { $customIco } else {
             Get-UwpIcoPath -PackageFamilyName $game.PackageFamilyName `
                            -InstallLocation   $game.InstallLocation `

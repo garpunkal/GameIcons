@@ -1,6 +1,5 @@
 {
   "_comment": "Configuration for Update-GameIcons.ps1. Edit values below to customise game detection and exclusions.",
-
   "steamNonGameIds": [
     "228980",
     "1070560",
@@ -8,7 +7,6 @@
     "250820",
     "1628350"
   ],
-
   "uwpServicePackageNames": [
     "Microsoft.GamingApp",
     "Microsoft.GamingServices",
@@ -22,21 +20,25 @@
     "Microsoft.Xbox.TCUI",
     "Microsoft.StorePurchaseApp"
   ],
-
   "msPublisherPrefixes": [
     "CN=Microsoft Corporation",
     "CN=Microsoft Windows",
     "E=ntdev@microsoft.com"
   ],
-
-  "steamGridDbExcludedIconIds": {
-    // "1151640": [
-    //   "53739",
-    //   "2843"
-    // ]
-  },
-
-  "includeStorePackages": [
-    "TrivialTechnology.UltimateRummy500"
-  ]
+  "steamGridDbPreferredIconIds": {
+    "1091500": "86095",
+    "Cyberpunk 2077": "86095",
+    "1151640": "103481",
+    "275850": "22818",
+    "3779": "22818",
+    "367520": "1399",
+    "200260": "21597",
+    "2379780": "52857",
+    "261570": "103551",
+    "1562430": "39698",
+    "221380": "51059",
+    "214490": "3362",
+    "1196590": "102199",
+    "238010": "75780"
+  }
 }
