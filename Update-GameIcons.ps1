@@ -78,6 +78,21 @@
 .PARAMETER WhatIf
     Preview changes without writing anything.
 
+.PARAMETER UseSteamGridDb
+    If set, attempts to fetch Steam game icons from SteamGridDB before falling
+    back to Steam's local library cache artwork.
+
+.PARAMETER SteamGridDbApiKey
+    SteamGridDB API key. If omitted, uses environment variable
+    STEAMGRIDDB_API_KEY.
+
+.PARAMETER SteamGridDbCache
+    Cache folder for SteamGridDB-downloaded icon assets.
+
+.PARAMETER RefreshSteamGridDb
+    If set with -UseSteamGridDb, forces re-download of cached SteamGridDB
+    assets.
+
 .EXAMPLE
     .\Update-GameIcons.ps1
 
@@ -102,7 +117,11 @@ param(
     # Folder for custom icon overrides. Drop a <GameName>.ico or <GameName>.png
     # here to override the auto-detected icon for any game.
     # Get free icons from: https://www.steamgriddb.com  (Icons tab, choose ICO/PNG)
-    [string]$CustomIconsPath = (Join-Path $PSScriptRoot 'CustomIcons')
+    [string]$CustomIconsPath = (Join-Path $PSScriptRoot 'CustomIcons'),
+    [switch]$UseSteamGridDb,
+    [string]$SteamGridDbApiKey = $env:STEAMGRIDDB_API_KEY,
+    [string]$SteamGridDbCache  = (Join-Path $PSScriptRoot 'SteamGridDbCache'),
+    [switch]$RefreshSteamGridDb
 )
 
 Set-StrictMode -Version Latest
@@ -211,6 +230,110 @@ function ConvertImageToIco {
     $writer.Flush()
     [System.IO.File]::WriteAllBytes($DestPath, $icoStream.ToArray())
     $writer.Dispose(); $icoStream.Dispose()
+}
+
+function Get-SteamGridDbIcoPath {
+    # Returns cached/generated SGDB icon for a Steam appid when available.
+    param(
+        [string]$AppId,
+        [string]$SafeName,
+        [string]$ApiKey,
+        [string]$CachePath,
+        [switch]$Refresh
+    )
+
+    if (-not $ApiKey) { return $null }
+    if (-not (Test-Path $CachePath)) {
+        if ($PSCmdlet.ShouldProcess($CachePath, 'Create SteamGridDB cache directory')) {
+            New-Item -ItemType Directory -Path $CachePath | Out-Null
+        }
+    }
+
+    $existingCached = Get-ChildItem $CachePath -Filter "$SafeName.sgdb*.ico" -ErrorAction SilentlyContinue |
+                      Sort-Object LastWriteTime -Descending |
+                      Select-Object -First 1
+    if ((-not $Refresh) -and $existingCached) { return $existingCached.FullName }
+
+    $headers = @{ Authorization = "Bearer $ApiKey" }
+    # Per-title explicit SGDB icon override by ID.
+    $overrideIconByAppId = @{
+        '1151640' = '2843'  # Horizon Zero Dawn Complete Edition
+    }
+
+    $resp = $null
+    if ($overrideIconByAppId.ContainsKey($AppId)) {
+        $iconId = $overrideIconByAppId[$AppId]
+        $apiUrl = "https://www.steamgriddb.com/api/v2/icons/$iconId"
+        try {
+            $resp = Invoke-RestMethod -Method Get -Uri $apiUrl -Headers $headers -ErrorAction Stop
+            # Normalize object response to the list shape used below.
+            if ($resp -and $resp.success -and $resp.data) {
+                $resp = [PSCustomObject]@{ success = $true; data = @($resp.data) }
+            }
+        } catch {
+            $resp = $null
+        }
+    }
+
+    if (-not $resp) {
+        $apiUrl = "https://www.steamgriddb.com/api/v2/icons/steam/${AppId}?styles=official,custom&types=static&mimes=image/vnd.microsoft.icon,image/png&sort=score&order=desc&limit=1"
+        try {
+            $resp = Invoke-RestMethod -Method Get -Uri $apiUrl -Headers $headers -ErrorAction Stop
+        } catch {
+            # Compatibility fallback for clients expecting raw API key without Bearer.
+            try {
+                $headers = @{ Authorization = $ApiKey }
+                $resp = Invoke-RestMethod -Method Get -Uri $apiUrl -Headers $headers -ErrorAction Stop
+            } catch {
+                Write-Host "  [SKIP]    SteamGridDB lookup failed for AppID $AppId" -ForegroundColor DarkYellow
+                return $null
+            }
+        }
+    }
+
+    if (-not $resp -or -not $resp.success -or -not $resp.data -or $resp.data.Count -eq 0) {
+        return $null
+    }
+
+    $candidate = $resp.data | Select-Object -First 1
+    $assetUrl = $candidate.url
+    if (-not $assetUrl) { return $null }
+
+    $tmpExt = '.png'
+    if ($candidate.mime -eq 'image/vnd.microsoft.icon') { $tmpExt = '.ico' }
+    $tmpPath = Join-Path $CachePath "$SafeName.sgdb.download$tmpExt"
+    $candidateId = if ($candidate.id) { [string]$candidate.id } else { 'picked' }
+    $candidateIcoPath = Join-Path $CachePath "$SafeName.sgdb.$candidateId.ico"
+
+    try {
+        if ($PSCmdlet.ShouldProcess($tmpPath, 'Download SteamGridDB icon')) {
+            Invoke-WebRequest -Uri $assetUrl -OutFile $tmpPath -UseBasicParsing -ErrorAction Stop
+        }
+
+        if ($tmpExt -eq '.ico') {
+            if ($PSCmdlet.ShouldProcess($candidateIcoPath, 'Store SteamGridDB ICO')) {
+                Copy-Item -LiteralPath $tmpPath -Destination $candidateIcoPath -Force
+            }
+        } else {
+            if ($PSCmdlet.ShouldProcess($candidateIcoPath, 'Convert SteamGridDB PNG to ICO')) {
+                ConvertImageToIco -SourcePath $tmpPath -DestPath $candidateIcoPath
+            }
+        }
+
+        if (Test-Path $candidateIcoPath) {
+            return $candidateIcoPath
+        }
+        return $null
+    } catch {
+        Write-Host "  [SKIP]    SteamGridDB download failed for AppID $AppId" -ForegroundColor DarkYellow
+        return $null
+    } finally {
+        if (Test-Path $tmpPath) {
+            if ($PSCmdlet.ShouldProcess($tmpPath, 'Remove temporary SteamGridDB asset')) {
+                Remove-Item -LiteralPath $tmpPath -Force
+            }
+        }
+    }
 }
 
 function Get-SteamIcoPath {
@@ -474,6 +597,10 @@ function Get-SteamAppManifests {
 ###############################################################################
 Write-Host "`n=== Steam ===" -ForegroundColor Cyan
 
+if ($UseSteamGridDb -and -not $SteamGridDbApiKey) {
+    Write-Host "  [SKIP]    SteamGridDB enabled but no API key provided (set -SteamGridDbApiKey or STEAMGRIDDB_API_KEY)." -ForegroundColor DarkYellow
+}
+
 if (-not (Test-Path $SteamInstall)) {
     Write-Host "  [SKIP]    Steam not found at: $SteamInstall" -ForegroundColor DarkYellow
 } else {
@@ -510,6 +637,10 @@ if (-not (Test-Path $SteamInstall)) {
 
         # Custom override takes priority; fall back to Steam library cache icon
         $icoPath = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
+        if (-not $icoPath -and $UseSteamGridDb -and $SteamGridDbApiKey) {
+            $icoPath = Get-SteamGridDbIcoPath -AppId $game.AppId -SafeName $safeName `
+                       -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache -Refresh:$RefreshSteamGridDb
+        }
         if (-not $icoPath) {
             $icoPath = Get-SteamIcoPath -AppId $game.AppId -SteamInstall $SteamInstall
         }
@@ -526,7 +657,8 @@ if (-not (Test-Path $SteamInstall)) {
             # -- Shortcut exists: check icon is still valid
             $raw     = [System.IO.File]::ReadAllText($shortcutPath)
             $current = if ($raw -match 'IconFile=([^\r\n]+)') { $matches[1].Trim() } else { '' }
-            if ($current -and (Test-Path $current)) {
+            $needsFix = -not $current -or -not (Test-Path $current) -or ($icoPath -and $current -ne $icoPath)
+            if (-not $needsFix) {
                 Write-Host "  [OK]      $($game.Name)" -ForegroundColor DarkGray
             } elseif ($icoPath) {
                 Write-Host "  [FIX]     $($game.Name)" -ForegroundColor Yellow

@@ -16,6 +16,10 @@
 # Generated ICO cache — safe to delete, rebuilt on next run
 UwpIconCache/
 
+# Local environment secrets
+.env
+!.env.example
+
 # Built Visual Studio Code Extensions
 *.vsix
 

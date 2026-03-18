@@ -24,6 +24,12 @@ Supports:
 .\Update-GameIcons.ps1
 ```
 
+You can also run it explicitly with PowerShell 7:
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File .\Update-GameIcons.ps1
+```
+
 Put all generated shortcuts into a dedicated Games Start Menu folder:
 
 ```powershell
@@ -56,6 +62,25 @@ Preview changes without writing anything:
 .\Update-GameIcons.ps1 -WhatIf
 ```
 
+Use SteamGridDB for Steam icon downloads (falls back to local Steam artwork when needed):
+
+```powershell
+.\Update-GameIcons.ps1 -UseSteamGridDb -SteamGridDbApiKey '<your-api-key>'
+```
+
+Or set the API key once via environment variable:
+
+```powershell
+$env:STEAMGRIDDB_API_KEY = '<your-api-key>'
+.\Update-GameIcons.ps1 -UseSteamGridDb
+```
+
+Force refresh of cached SteamGridDB icons:
+
+```powershell
+.\Update-GameIcons.ps1 -UseSteamGridDb -RefreshSteamGridDb
+```
+
 ### Parameters
 
 | Parameter | Default | Description |
@@ -72,6 +97,10 @@ Preview changes without writing anything:
 | `UwpIconCache` | `.\UwpIconCache` | Folder where extracted UWP logos are cached as `.ico` files |
 | `IncludeStorePackages` | `@()` | Package name patterns to force-include in the MS Store section (see below) |
 | `CustomIconsPath` | `.\CustomIcons` | Folder for custom icon overrides (see below) |
+| `UseSteamGridDb` | `False` | Enables Steam icon lookup from SteamGridDB before local Steam fallback |
+| `SteamGridDbApiKey` | `$env:STEAMGRIDDB_API_KEY` | SteamGridDB API key (uses environment variable if omitted) |
+| `SteamGridDbCache` | `.\SteamGridDbCache` | Cache folder for SteamGridDB-downloaded icon assets |
+| `RefreshSteamGridDb` | `False` | Re-download SteamGridDB assets instead of using cached files |
 
 ---
 
@@ -88,6 +117,8 @@ CustomIcons/
 ```
 
 Free high-quality icons can be downloaded from [SteamGridDB](https://www.steamgriddb.com) (use the **Icons** tab and choose ICO or PNG format).
+
+When both a custom icon and SteamGridDB are available, `CustomIcons` takes priority.
 
 ---
 
@@ -136,6 +167,7 @@ Each game is reported with one of these statuses:
 | Path | Purpose |
 |---|---|
 | `UwpIconCache/` | Cached `.ico` files extracted from UWP package assets. Safe to delete — regenerated on next run. |
+| `SteamGridDbCache/` | Cached SteamGridDB icon assets. Safe to delete — regenerated when `-UseSteamGridDb` is used. |
 | `CustomIcons/` | Your custom icon overrides. Not touched by the script. |
 | `IncludeStorePackages.txt` | Opt-in list for Store games without gaming capabilities. |
 
