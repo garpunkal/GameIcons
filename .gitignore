@@ -15,6 +15,7 @@
 ### GameIcons ###
 # Generated ICO cache — safe to delete, rebuilt on next run
 UwpIconCache/
+SteamGridDbCache/
 
 # Local environment secrets
 .env

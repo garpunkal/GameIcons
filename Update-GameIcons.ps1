@@ -255,25 +255,8 @@ function Get-SteamGridDbIcoPath {
     if ((-not $Refresh) -and $existingCached) { return $existingCached.FullName }
 
     $headers = @{ Authorization = "Bearer $ApiKey" }
-    # Per-title explicit SGDB icon override by ID.
-    $overrideIconByAppId = @{
-        '1151640' = '2843'  # Horizon Zero Dawn Complete Edition
-    }
 
     $resp = $null
-    if ($overrideIconByAppId.ContainsKey($AppId)) {
-        $iconId = $overrideIconByAppId[$AppId]
-        $apiUrl = "https://www.steamgriddb.com/api/v2/icons/$iconId"
-        try {
-            $resp = Invoke-RestMethod -Method Get -Uri $apiUrl -Headers $headers -ErrorAction Stop
-            # Normalize object response to the list shape used below.
-            if ($resp -and $resp.success -and $resp.data) {
-                $resp = [PSCustomObject]@{ success = $true; data = @($resp.data) }
-            }
-        } catch {
-            $resp = $null
-        }
-    }
 
     if (-not $resp) {
         $apiUrl = "https://www.steamgriddb.com/api/v2/icons/steam/${AppId}?styles=official,custom&types=static&mimes=image/vnd.microsoft.icon,image/png&sort=score&order=desc&limit=1"
