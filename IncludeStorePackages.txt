@@ -1,4 +1,0 @@
-# One package Name pattern per line (wildcards supported, e.g. Publisher.*)
-# Packages listed here will be included in the Microsoft Store Games section
-# even if they declare no gaming capabilities.
-TrivialTechnology.UltimateRummy500

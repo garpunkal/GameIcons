@@ -1,0 +1,42 @@
+{
+  "_comment": "Configuration for Update-GameIcons.ps1. Edit values below to customise game detection and exclusions.",
+
+  "steamNonGameIds": [
+    "228980",
+    "1070560",
+    "1391110",
+    "250820",
+    "1628350"
+  ],
+
+  "uwpServicePackageNames": [
+    "Microsoft.GamingApp",
+    "Microsoft.GamingServices",
+    "Microsoft.XboxIdentityProvider",
+    "Microsoft.XboxSpeechToTextOverlay",
+    "Microsoft.XboxGameCallableUI",
+    "Microsoft.XboxGameOverlay",
+    "Microsoft.XboxGamingOverlay",
+    "Microsoft.XboxGameBar",
+    "Microsoft.XboxTCUI",
+    "Microsoft.Xbox.TCUI",
+    "Microsoft.StorePurchaseApp"
+  ],
+
+  "msPublisherPrefixes": [
+    "CN=Microsoft Corporation",
+    "CN=Microsoft Windows",
+    "E=ntdev@microsoft.com"
+  ],
+
+  "steamGridDbExcludedIconIds": {
+    // "1151640": [
+    //   "53739",
+    //   "2843"
+    // ]
+  },
+
+  "includeStorePackages": [
+    "TrivialTechnology.UltimateRummy500"
+  ]
+}

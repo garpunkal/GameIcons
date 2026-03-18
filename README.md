@@ -75,10 +75,46 @@ $env:STEAMGRIDDB_API_KEY = '<your-api-key>'
 .\Update-GameIcons.ps1 -UseSteamGridDb
 ```
 
+To persist it for future terminals and logins (recommended):
+
+```powershell
+setx STEAMGRIDDB_API_KEY "<your-api-key>"
+```
+
+Then open a new terminal before running the script again.
+
+If a `.env` file exists next to the script with `STEAMGRIDDB_API_KEY=...`,
+the script now auto-loads it when no explicit/environment key is already set.
+
+```dotenv
+STEAMGRIDDB_API_KEY=<your-api-key>
+```
+
+To have the script persist the resolved key to your User environment:
+
+```powershell
+.\Update-GameIcons.ps1 -UseSteamGridDb -PersistSteamGridDbApiKey
+```
+
 Force refresh of cached SteamGridDB icons:
 
 ```powershell
 .\Update-GameIcons.ps1 -UseSteamGridDb -RefreshSteamGridDb
+```
+
+By default, the script triggers a Windows icon cache refresh and then restarts
+Explorer at the end.
+
+Disable both steps if needed:
+
+```powershell
+.\Update-GameIcons.ps1 -SkipIconCacheRefresh
+```
+
+Disable only the Explorer restart while keeping icon cache refresh:
+
+```powershell
+.\Update-GameIcons.ps1 -SkipExplorerRestart
 ```
 
 ### Parameters
@@ -96,11 +132,16 @@ Force refresh of cached SteamGridDB icons:
 | `MsStoreMenu` | `%APPDATA%\...\Programs\Microsoft Store` | Start Menu folder for Store game shortcuts |
 | `UwpIconCache` | `.\UwpIconCache` | Folder where extracted UWP logos are cached as `.ico` files |
 | `IncludeStorePackages` | `@()` | Package name patterns to force-include in the MS Store section (see below) |
+| `SettingsPath` | `.\config\settings.json` | JSON file with exclusion lists, publisher prefixes, and other configuration |
 | `CustomIconsPath` | `.\CustomIcons` | Folder for custom icon overrides (see below) |
 | `UseSteamGridDb` | `False` | Enables Steam icon lookup from SteamGridDB before local Steam fallback |
 | `SteamGridDbApiKey` | `$env:STEAMGRIDDB_API_KEY` | SteamGridDB API key (uses environment variable if omitted) |
+| `DotEnvPath` | `.\.env` | Optional `.env` file path used to load `STEAMGRIDDB_API_KEY` when needed |
+| `PersistSteamGridDbApiKey` | `False` | Saves resolved SteamGridDB API key to User environment for future terminals |
 | `SteamGridDbCache` | `.\SteamGridDbCache` | Cache folder for SteamGridDB-downloaded icon assets |
 | `RefreshSteamGridDb` | `False` | Re-download SteamGridDB assets instead of using cached files |
+| `SkipIconCacheRefresh` | `False` | Skips the final Windows icon cache refresh step |
+| `SkipExplorerRestart` | `False` | Skips restarting Explorer after icon cache refresh |
 
 ---
 
@@ -126,12 +167,15 @@ When both a custom icon and SteamGridDB are available, `CustomIcons` takes prior
 
 Some Microsoft Store games don't declare any gaming capabilities in their manifest (e.g. games built with certain Unity or web-based frameworks). These won't be auto-detected by the Store section.
 
-To force-include them, add their package `Name` (one per line) to `IncludeStorePackages.txt` next to the script. Wildcards are supported.
+To force-include them, add their package `Name` to the `includeStorePackages` array in `config/settings.json`. Wildcards are supported.
 
-```
-# IncludeStorePackages.txt
-TrivialTechnology.UltimateRummy500
-SomePublisher.*
+```json
+{
+  "includeStorePackages": [
+    "TrivialTechnology.UltimateRummy500",
+    "SomePublisher.*"
+  ]
+}
 ```
 
 You can also pass them directly via the `-IncludeStorePackages` parameter:
@@ -169,7 +213,7 @@ Each game is reported with one of these statuses:
 | `UwpIconCache/` | Cached `.ico` files extracted from UWP package assets. Safe to delete — regenerated on next run. |
 | `SteamGridDbCache/` | Cached SteamGridDB icon assets. Safe to delete — regenerated when `-UseSteamGridDb` is used. |
 | `CustomIcons/` | Your custom icon overrides. Not touched by the script. |
-| `IncludeStorePackages.txt` | Opt-in list for Store games without gaming capabilities. |
+| `config/settings.json` | Consolidated settings: exclusion lists, publisher prefixes, SGDB icon exclusions, and Store package overrides. |
 
 ---
 

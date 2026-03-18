@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Syncs Steam, Epic Games, Xbox Game Pass, and Microsoft Store installed
     libraries to Start Menu shortcuts, creating missing shortcuts and fixing
@@ -75,16 +75,33 @@
     Useful for games that only declare 'internetClient' (e.g. Rummy 500).
     Example: -IncludeStorePackages 'TrivialTechnology.UltimateRummy500','AnotherPublisher.*'
 
+.PARAMETER SettingsPath
+    Path to the JSON settings file containing exclusion lists, publisher
+    prefixes, and other configuration. Default: config\settings.json next
+    to the script.
+
 .PARAMETER WhatIf
     Preview changes without writing anything.
 
 .PARAMETER UseSteamGridDb
-    If set, attempts to fetch Steam game icons from SteamGridDB before falling
-    back to Steam's local library cache artwork.
+    If set, attempts to fetch Steam game icons from SteamGridDB.
+    Resolution order:
+      1. SteamGridDB official icons (original Steam assets hosted on SGDB)
+      2. SteamGridDB all styles sorted by score (community icons)
+            3. Cached icons from SteamGridDbCache or UwpIconCache
+            4. Local Steam assets (clienticon / library cache artwork)
 
 .PARAMETER SteamGridDbApiKey
     SteamGridDB API key. If omitted, uses environment variable
     STEAMGRIDDB_API_KEY.
+
+.PARAMETER DotEnvPath
+    Optional path to a .env file used to load STEAMGRIDDB_API_KEY when no
+    explicit key or environment key is available.
+
+.PARAMETER PersistSteamGridDbApiKey
+    If set and a SteamGridDB API key is resolved, saves it to the current
+    user's environment (STEAMGRIDDB_API_KEY) for future terminals.
 
 .PARAMETER SteamGridDbCache
     Cache folder for SteamGridDB-downloaded icon assets.
@@ -92,6 +109,12 @@
 .PARAMETER RefreshSteamGridDb
     If set with -UseSteamGridDb, forces re-download of cached SteamGridDB
     assets.
+
+.PARAMETER SkipIconCacheRefresh
+    If set, skips the final Windows shell icon cache refresh step.
+
+.PARAMETER SkipExplorerRestart
+    If set, does not restart Explorer after icon cache refresh.
 
 .EXAMPLE
     .\Update-GameIcons.ps1
@@ -112,20 +135,77 @@ param(
     [string]$MsStoreMenu     = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Microsoft Store",
     [string]$UwpIconCache    = (Join-Path $PSScriptRoot 'UwpIconCache'),
     # Package Name patterns (wildcards OK) to force-include in the MS Store section
-    # even if the app declares no gaming capabilities. Persisted in IncludeStorePackages.txt.
+    # even if the app declares no gaming capabilities. Persisted in settings.json.
     [string[]]$IncludeStorePackages = @(),
+    [string]$SettingsPath = (Join-Path $PSScriptRoot 'settings.json'),
     # Folder for custom icon overrides. Drop a <GameName>.ico or <GameName>.png
     # here to override the auto-detected icon for any game.
     # Get free icons from: https://www.steamgriddb.com  (Icons tab, choose ICO/PNG)
     [string]$CustomIconsPath = (Join-Path $PSScriptRoot 'CustomIcons'),
     [switch]$UseSteamGridDb,
     [string]$SteamGridDbApiKey = $env:STEAMGRIDDB_API_KEY,
+    [string]$DotEnvPath = (Join-Path $PSScriptRoot '.env'),
+    [switch]$PersistSteamGridDbApiKey,
     [string]$SteamGridDbCache  = (Join-Path $PSScriptRoot 'SteamGridDbCache'),
-    [switch]$RefreshSteamGridDb
+    [switch]$RefreshSteamGridDb,
+    [switch]$SkipIconCacheRefresh,
+    [switch]$SkipExplorerRestart
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
+
+# Resolve API key from broader environment scopes so SteamGridDB can work
+# even when the current shell session does not have the process variable.
+if (-not $SteamGridDbApiKey) {
+    foreach ($scope in @('User', 'Machine')) {
+        try {
+            $candidate = [Environment]::GetEnvironmentVariable('STEAMGRIDDB_API_KEY', $scope)
+            if ($candidate) {
+                $SteamGridDbApiKey = $candidate
+                Write-Host "SteamGridDB API key loaded from $scope environment scope." -ForegroundColor DarkGray
+                break
+            }
+        } catch {
+            # Ignore environment lookup errors and continue probing scopes.
+        }
+    }
+}
+
+# Optionally resolve from a local .env file for convenience.
+if (-not $SteamGridDbApiKey -and $DotEnvPath -and (Test-Path $DotEnvPath)) {
+    try {
+        $dotenvLine = Get-Content -LiteralPath $DotEnvPath -ErrorAction Stop |
+                      Where-Object { $_ -match '^\s*STEAMGRIDDB_API_KEY\s*=' } |
+                      Select-Object -First 1
+        if ($dotenvLine -match '^\s*STEAMGRIDDB_API_KEY\s*=\s*(.+?)\s*$') {
+            $candidate = $matches[1].Trim().Trim("'").Trim('"')
+            if ($candidate) {
+                $SteamGridDbApiKey = $candidate
+                Write-Host "SteamGridDB API key loaded from .env file." -ForegroundColor DarkGray
+            }
+        }
+    } catch {
+        # Ignore .env read/parse errors and continue without failing the run.
+    }
+}
+
+# Keep the current process variable in sync once a key is resolved.
+if ($SteamGridDbApiKey -and -not $env:STEAMGRIDDB_API_KEY) {
+    $env:STEAMGRIDDB_API_KEY = $SteamGridDbApiKey
+}
+
+# Optional one-time persistence for future shells.
+if ($PersistSteamGridDbApiKey) {
+    if ($SteamGridDbApiKey) {
+        if ($PSCmdlet.ShouldProcess('User environment STEAMGRIDDB_API_KEY', 'Persist SteamGridDB API key')) {
+            [Environment]::SetEnvironmentVariable('STEAMGRIDDB_API_KEY', $SteamGridDbApiKey, 'User')
+            Write-Host "SteamGridDB API key saved to User environment scope." -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Host "  [SKIP]    PersistSteamGridDbApiKey was set but no SteamGridDB API key was resolved." -ForegroundColor DarkYellow
+    }
+}
 
 # New preferred mode: place all shortcuts in an explicit Games folder.
 if ($UseGamesFolderForAll) {
@@ -176,6 +256,41 @@ function Get-SafeFilename {
     # Remove characters that Windows does not allow in file names
     param([string]$Name)
     ($Name -replace '[\\/:*?"<>|]', '').Trim()
+}
+
+function Get-Settings {
+    # Reads the consolidated JSON settings file.
+    param([string]$Path)
+    $defaults = @{
+        steamNonGameIds           = @()
+        uwpServicePackageNames    = @()
+        msPublisherPrefixes       = @()
+        steamGridDbExcludedIconIds = @{}
+        includeStorePackages      = @()
+    }
+    if (-not $Path -or -not (Test-Path $Path)) { return $defaults }
+    try {
+        $json = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json
+    } catch {
+        Write-Host "  [WARN]    Failed to parse settings file: $Path" -ForegroundColor DarkYellow
+        return $defaults
+    }
+    # Simple arrays
+    foreach ($key in @('steamNonGameIds','uwpServicePackageNames','msPublisherPrefixes','includeStorePackages')) {
+        if ($json.PSObject.Properties[$key]) {
+            $defaults[$key] = @($json.$key)
+        }
+    }
+    # Map: steamGridDbExcludedIconIds -> hashtable of appId -> string[] iconIds
+    if ($json.PSObject.Properties['steamGridDbExcludedIconIds']) {
+        $map = @{}
+        $obj = $json.steamGridDbExcludedIconIds
+        foreach ($prop in $obj.PSObject.Properties) {
+            $map[$prop.Name] = @($prop.Value | ForEach-Object { [string]$_ })
+        }
+        $defaults['steamGridDbExcludedIconIds'] = $map
+    }
+    return $defaults
 }
 
 function Write-UrlFile {
@@ -239,8 +354,33 @@ function Get-SteamGridDbIcoPath {
         [string]$SafeName,
         [string]$ApiKey,
         [string]$CachePath,
-        [switch]$Refresh
+        [switch]$Refresh,
+        # Comma-separated SteamGridDB style filter (e.g. 'official' or 'official,custom').
+        [string]$Styles = 'official,custom'
     )
+
+    $excludedIds = @()
+    if ($script:SteamGridDbExcludedIconIdsByAppId -and $script:SteamGridDbExcludedIconIdsByAppId.ContainsKey($AppId)) {
+        $excludedIds = @($script:SteamGridDbExcludedIconIdsByAppId[$AppId] | ForEach-Object { [string]$_ })
+    }
+
+    $cachedCandidates = Get-ChildItem $CachePath -Filter "$SafeName.sgdb*.ico" -ErrorAction SilentlyContinue
+    if ($excludedIds.Count -gt 0) {
+        $cachedCandidates = $cachedCandidates | Where-Object {
+            if ($_.BaseName -match '\.sgdb\.(\d+)$') {
+                return ($excludedIds -notcontains $matches[1])
+            }
+            return $true
+        }
+    }
+    $existingCached = $cachedCandidates |
+                      Sort-Object LastWriteTime -Descending |
+                      Select-Object -First 1
+    # Reuse cached SGDB asset whenever possible. If no API key is present,
+    # prefer the cached icon instead of downgrading back to Steam local art.
+    if ($existingCached -and ((-not $Refresh) -or (-not $ApiKey))) {
+        return $existingCached.FullName
+    }
 
     if (-not $ApiKey) { return $null }
     if (-not (Test-Path $CachePath)) {
@@ -249,17 +389,12 @@ function Get-SteamGridDbIcoPath {
         }
     }
 
-    $existingCached = Get-ChildItem $CachePath -Filter "$SafeName.sgdb*.ico" -ErrorAction SilentlyContinue |
-                      Sort-Object LastWriteTime -Descending |
-                      Select-Object -First 1
-    if ((-not $Refresh) -and $existingCached) { return $existingCached.FullName }
-
     $headers = @{ Authorization = "Bearer $ApiKey" }
 
     $resp = $null
 
     if (-not $resp) {
-        $apiUrl = "https://www.steamgriddb.com/api/v2/icons/steam/${AppId}?styles=official,custom&types=static&mimes=image/vnd.microsoft.icon,image/png&sort=score&order=desc&limit=1"
+        $apiUrl = "https://www.steamgriddb.com/api/v2/icons/steam/${AppId}?styles=${Styles}&types=static&mimes=image/vnd.microsoft.icon,image/png&sort=score&order=desc&limit=20"
         try {
             $resp = Invoke-RestMethod -Method Get -Uri $apiUrl -Headers $headers -ErrorAction Stop
         } catch {
@@ -278,7 +413,24 @@ function Get-SteamGridDbIcoPath {
         return $null
     }
 
-    $candidate = $resp.data | Select-Object -First 1
+    $candidates = @($resp.data)
+    if ($excludedIds.Count -gt 0) {
+        $candidates = $candidates | Where-Object {
+            $id = if ($_.id) { [string]$_.id } else { '' }
+            return ($excludedIds -notcontains $id)
+        }
+    }
+    if (-not $candidates -or $candidates.Count -eq 0) {
+        Write-Host "  [SKIP]    SteamGridDB has no acceptable icon candidates for AppID $AppId" -ForegroundColor DarkYellow
+        return $null
+    }
+
+    # Prefer official art when available, then highest score/upvotes.
+    $candidate = $candidates |
+                 Sort-Object @{ Expression = { if ($_.style -eq 'official') { 0 } else { 1 } } },
+                             @{ Expression = { if ($_.score) { [double]$_.score } else { 0 } }; Descending = $true },
+                             @{ Expression = { if ($_.upvotes) { [int]$_.upvotes } else { 0 } }; Descending = $true } |
+                 Select-Object -First 1
     $assetUrl = $candidate.url
     if (-not $assetUrl) { return $null }
 
@@ -320,11 +472,22 @@ function Get-SteamGridDbIcoPath {
 }
 
 function Get-SteamIcoPath {
-    # Returns the path to the .ico for a Steam appid, creating it from
-    # the library cache JPG if needed. Returns $null if no source found.
-    param([string]$AppId, [string]$SteamInstall)
+    # Returns the path to the .ico for a Steam appid.
+    # Prefers Steam's original clienticon asset when available, then falls
+    # back to converting Steam library cache JPGs.
+    param(
+        [string]$AppId,
+        [string]$SteamInstall,
+        [string]$ClientIconHash
+    )
     $icoDir  = Join-Path $SteamInstall 'steam\games'
     $cacheDir = Join-Path $SteamInstall "appcache\librarycache\$AppId"
+
+    # Prefer Steam's native client icon from appmanifest "clienticon" hash.
+    if ($ClientIconHash) {
+        $clientIconPath = Join-Path $icoDir "$ClientIconHash.ico"
+        if (Test-Path $clientIconPath) { return $clientIconPath }
+    }
 
     # Prefer the dedicated icon JPG (40-char sha1 filename)
     $iconJpg = Get-ChildItem $cacheDir -Filter '*.jpg' -ErrorAction SilentlyContinue |
@@ -347,6 +510,38 @@ function Get-SteamIcoPath {
         ConvertImageToIco -SourcePath $iconJpg.FullName -DestPath $icoPath
     }
     return $icoPath
+}
+
+function Get-CachedIcoPath {
+    # Looks for a previously generated/downloaded icon in cache folders.
+    # SteamGridDbCache is checked first, then UwpIconCache.
+    param(
+        [string]$SafeName,
+        [string]$SteamGridDbCache,
+        [string]$UwpIconCache
+    )
+
+    if ($SteamGridDbCache -and (Test-Path $SteamGridDbCache)) {
+        $sgdbCandidate = Get-ChildItem -LiteralPath $SteamGridDbCache -Filter "$SafeName.sgdb*.ico" -ErrorAction SilentlyContinue |
+                         Sort-Object LastWriteTime -Descending |
+                         Select-Object -First 1
+        if ($sgdbCandidate) { return $sgdbCandidate.FullName }
+
+        $genericCandidate = Get-ChildItem -LiteralPath $SteamGridDbCache -Filter "$SafeName*.ico" -ErrorAction SilentlyContinue |
+                            Sort-Object LastWriteTime -Descending |
+                            Select-Object -First 1
+        if ($genericCandidate) { return $genericCandidate.FullName }
+    }
+
+    if ($UwpIconCache -and (Test-Path $UwpIconCache)) {
+        $namedCandidate = Join-Path $UwpIconCache "$SafeName.ico"
+        if (Test-Path $namedCandidate) { return $namedCandidate }
+
+        $folderCandidate = Join-Path (Join-Path $UwpIconCache $SafeName) 'icon.ico'
+        if (Test-Path $folderCandidate) { return $folderCandidate }
+    }
+
+    return $null
 }
 
 function Get-SteamLibraryPaths {
@@ -456,33 +651,19 @@ function Get-UwpGameList {
     try   { $packages = Get-AppxPackage -AllUsers -ErrorAction Stop }
     catch { $packages = Get-AppxPackage -ErrorAction SilentlyContinue }
 
-    # Microsoft publisher prefixes to skip for the Store-only list
-    $msPrefixes = @(
-        'CN=Microsoft Corporation',
-        'CN=Microsoft Windows',
-        'E=ntdev@microsoft.com'
-    )
-
-    # Xbox/Windows infrastructure packages (not games) that carry xboxLive
-    $servicePackageNames = @(
-        'Microsoft.GamingApp',
-        'Microsoft.GamingServices',
-        'Microsoft.XboxIdentityProvider',
-        'Microsoft.XboxSpeechToTextOverlay',
-        'Microsoft.XboxGameCallableUI',
-        'Microsoft.XboxGameOverlay',
-        'Microsoft.XboxGamingOverlay',
-        'Microsoft.XboxGameBar',
-        'Microsoft.XboxTCUI',
-        'Microsoft.Xbox.TCUI',
-        'Microsoft.StorePurchaseApp'
-    )
-
     foreach ($pkg in $packages) {
         if ($pkg.IsFramework)       { continue }
         if ($pkg.IsResourcePackage) { continue }
         if ($pkg.SignatureKind -eq 'System') { continue }
-        if ($servicePackageNames -contains $pkg.Name) { continue }
+        $pkgName = if ($pkg.Name) { [string]$pkg.Name } else { '' }
+        $pkgFamilyBase = ''
+        if ($pkg.PackageFamilyName) {
+            $pkgFamilyBase = ([string]$pkg.PackageFamilyName -split '_')[0]
+        }
+        if (($script:UwpServicePackageNames -contains $pkgName) -or
+            ($pkgFamilyBase -and ($script:UwpServicePackageNames -contains $pkgFamilyBase))) {
+            continue
+        }
 
         $manifestPath = Join-Path $pkg.InstallLocation 'AppxManifest.xml'
         if (-not (Test-Path $manifestPath -PathType Leaf)) { continue }
@@ -501,7 +682,7 @@ function Get-UwpGameList {
         if ($StoreOnly) {
             $pub      = $pkg.Publisher
             $isMsPub  = $false
-            foreach ($prefix in $msPrefixes) {
+            foreach ($prefix in $script:MsPublisherPrefixes) {
                 if ($pub -like "$prefix*") { $isMsPub = $true; break }
             }
             if ($isMsPub) { continue }
@@ -538,8 +719,12 @@ function Get-UwpGameList {
     }
 }
 
-# AppIDs that are tools/redistributables, not games
-$script:SteamNonGameIds = @('228980','1070560','1391110','250820','1628350')
+# Load consolidated settings
+$script:Settings = Get-Settings -Path $SettingsPath
+$script:SteamNonGameIds                  = $script:Settings.steamNonGameIds
+$script:UwpServicePackageNames            = $script:Settings.uwpServicePackageNames
+$script:MsPublisherPrefixes               = $script:Settings.msPublisherPrefixes
+$script:SteamGridDbExcludedIconIdsByAppId  = $script:Settings.steamGridDbExcludedIconIds
 
 function Get-SteamAppManifests {
     param([string[]]$LibraryPaths)
@@ -554,6 +739,7 @@ function Get-SteamAppManifests {
             $raw        = [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::UTF8)
             $appId      = if ($raw -match '"appid"\s+"(\d+)"') { $matches[1] } else { $null }
             $name       = if ($raw -match '"name"\s+"([^"]+)"') { $matches[1] } else { $null }
+            $clientIcon = if ($raw -match '"clienticon"\s+"([^"]+)"') { $matches[1] } else { $null }
             $installDir = if ($raw -match '"installdir"\s+"([^"]+)"') { $matches[1] } else { $null }
             $flags      = if ($raw -match '"StateFlags"\s+"(\d+)"') { [int]$matches[1] } else { 0 }
             if (-not $appId -or -not $name) { return }
@@ -565,9 +751,10 @@ function Get-SteamAppManifests {
             $fullInstallDir = Join-Path (Join-Path $lib 'steamapps\common') $installDir
             if (-not (Test-Path $fullInstallDir)) { return }
             [PSCustomObject]@{
-                AppId   = $appId
-                Name    = $name
-                Library = $lib
+                AppId          = $appId
+                Name           = $name
+                ClientIconHash = $clientIcon
+                Library        = $lib
             }
         }
     }
@@ -615,17 +802,34 @@ if (-not (Test-Path $SteamInstall)) {
 
     foreach ($game in ($games | Sort-Object Name)) {
         $safeName     = Get-SafeFilename -Name $game.Name
+        # Use an ASCII cache key so .url IconFile paths avoid Unicode edge cases.
+        $steamIconCacheKey = "steam.$($game.AppId)"
         $shortcutPath = Join-Path $SteamMenu "$safeName.url"
         $url          = "steam://rungameid/$($game.AppId)"
 
-        # Custom override takes priority; fall back to Steam library cache icon
+        # Custom override takes priority
         $icoPath = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
-        if (-not $icoPath -and $UseSteamGridDb -and $SteamGridDbApiKey) {
-            $icoPath = Get-SteamGridDbIcoPath -AppId $game.AppId -SafeName $safeName `
-                       -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache -Refresh:$RefreshSteamGridDb
+        if (-not $icoPath -and $UseSteamGridDb) {
+            # 1. SteamGridDB official icons (original Steam assets hosted on SGDB)
+            $icoPath = Get-SteamGridDbIcoPath -AppId $game.AppId -SafeName $steamIconCacheKey `
+                       -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache `
+                       -Refresh:$RefreshSteamGridDb -Styles 'official'
+            # 2. SteamGridDB all styles sorted by score (community icons)
+            if (-not $icoPath) {
+                $icoPath = Get-SteamGridDbIcoPath -AppId $game.AppId -SafeName $steamIconCacheKey `
+                           -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache `
+                           -Refresh:$RefreshSteamGridDb -Styles 'official,custom'
+            }
         }
+
+        # 3. Cached icons from SteamGridDbCache or UwpIconCache
         if (-not $icoPath) {
-            $icoPath = Get-SteamIcoPath -AppId $game.AppId -SteamInstall $SteamInstall
+            $icoPath = Get-CachedIcoPath -SafeName $steamIconCacheKey -SteamGridDbCache $SteamGridDbCache -UwpIconCache $UwpIconCache
+        }
+
+        # 4. Local Steam assets (clienticon / library cache)
+        if (-not $icoPath) {
+            $icoPath = Get-SteamIcoPath -AppId $game.AppId -SteamInstall $SteamInstall -ClientIconHash $game.ClientIconHash
         }
 
         if (-not (Test-Path $shortcutPath)) {
@@ -634,7 +838,7 @@ if (-not (Test-Path $SteamInstall)) {
                 Write-Host "  [CREATE]  $($game.Name)" -ForegroundColor Green
                 Write-UrlFile -Path $shortcutPath -Url $url -IconFile $icoPath
             } else {
-                Write-Host "  [SKIP]    $($game.Name) (AppID $($game.AppId)) - no icon found in library cache" -ForegroundColor DarkYellow
+                Write-Host "  [SKIP]    $($game.Name) (AppID $($game.AppId)) - no icon found in SteamGridDB, caches, or Steam local assets" -ForegroundColor DarkYellow
             }
         } else {
             # -- Shortcut exists: check icon is still valid
@@ -647,7 +851,7 @@ if (-not (Test-Path $SteamInstall)) {
                 Write-Host "  [FIX]     $($game.Name)" -ForegroundColor Yellow
                 Set-UrlIconFile -Path $shortcutPath -IconFile $icoPath
             } else {
-                Write-Host "  [SKIP]    $($game.Name) (AppID $($game.AppId)) - broken icon, no cache source" -ForegroundColor DarkYellow
+                Write-Host "  [SKIP]    $($game.Name) (AppID $($game.AppId)) - broken icon, no source available" -ForegroundColor DarkYellow
             }
         }
     }
@@ -831,11 +1035,9 @@ Write-Host "`n=== Microsoft Store Games ===" -ForegroundColor Cyan
 $storeGames = [System.Collections.Generic.List[object]]::new()
 foreach ($g in @(Get-UwpGameList -StoreOnly)) { $storeGames.Add($g) }
 
-# Load persisted include list from file (one package Name pattern per line)
-$includeListFile = Join-Path $PSScriptRoot 'IncludeStorePackages.txt'
-if (Test-Path $includeListFile) {
-    $fileEntries = Get-Content $includeListFile | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' }
-    $IncludeStorePackages = @($IncludeStorePackages) + @($fileEntries) | Select-Object -Unique
+# Merge persisted include list from settings.json
+if ($script:Settings.includeStorePackages.Count -gt 0) {
+    $IncludeStorePackages = @($IncludeStorePackages) + @($script:Settings.includeStorePackages) | Select-Object -Unique
 }
 
 if ($IncludeStorePackages.Count -gt 0) {
@@ -941,6 +1143,31 @@ if ($storeGames.Count -eq 0) {
                 Write-Host "  [SKIP]    $($game.DisplayName) - broken icon, no source available" -ForegroundColor DarkYellow
             }
         }
+    }
+}
+
+if (-not $SkipIconCacheRefresh) {
+    try {
+        Write-Host "`n=== Refresh Icon Cache ===" -ForegroundColor Cyan
+
+        if ($PSCmdlet.ShouldProcess('Windows shell icon cache', 'Refresh icon cache')) {
+            $ie4uinitPath = Join-Path $env:SystemRoot 'System32\ie4uinit.exe'
+            if (Test-Path $ie4uinitPath) {
+                & $ie4uinitPath -show
+                Write-Host "  Icon cache refresh triggered." -ForegroundColor DarkGray
+            } else {
+                Write-Host "  [SKIP]    Icon cache refresh tool not found: $ie4uinitPath" -ForegroundColor DarkYellow
+            }
+        }
+
+        if (-not $SkipExplorerRestart) {
+            if ($PSCmdlet.ShouldProcess('Explorer shell', 'Restart Explorer')) {
+                Stop-Process -Name explorer -Force -ErrorAction Stop
+                Write-Host "  Explorer restart triggered (Windows will relaunch the shell)." -ForegroundColor DarkGray
+            }
+        }
+    } catch {
+        Write-Host "  [SKIP]    Shell refresh/restart failed: $($_.Exception.Message)" -ForegroundColor DarkYellow
     }
 }
 
