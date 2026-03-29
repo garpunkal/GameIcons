@@ -126,7 +126,7 @@
 param(
     [string]$SteamInstall    = 'C:\Program Files (x86)\Steam',
     [string]$SteamMenu       = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Steam",
-    [switch]$UseGamesFolderForAll,
+    [switch]$UseGamesFolderForAll = $true,
     [string]$GamesMenu       = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Games",
     [switch]$UseSteamFolderForAll,
     [string]$EpicMenu        = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Epic Games",
@@ -142,12 +142,12 @@ param(
     # here to override the auto-detected icon for any game.
     # Get free icons from: https://www.steamgriddb.com  (Icons tab, choose ICO/PNG)
     [string]$CustomIconsPath = (Join-Path $PSScriptRoot 'CustomIcons'),
-    [switch]$UseSteamGridDb,
+    [switch]$UseSteamGridDb = $true,
     [string]$SteamGridDbApiKey = $env:STEAMGRIDDB_API_KEY,
     [string]$DotEnvPath = (Join-Path $PSScriptRoot '.env'),
     [switch]$PersistSteamGridDbApiKey,
     [string]$SteamGridDbCache  = (Join-Path $PSScriptRoot 'SteamGridDbCache'),
-    [switch]$RefreshSteamGridDb,
+    [switch]$RefreshSteamGridDb = $true,
     [switch]$SkipIconCacheRefresh,
     [switch]$SkipExplorerRestart
 )
@@ -884,7 +884,10 @@ if (-not (Test-Path $SteamInstall)) {
                 Write-Host "  [FIX]     $($game.Name)" -ForegroundColor Yellow
                 Set-UrlIconFile -Path $shortcutPath -IconFile $icoPath
             } else {
-                Write-Host "  [SKIP]    $($game.Name) (AppID $($game.AppId)) - broken icon, no source available" -ForegroundColor DarkYellow
+                Write-Host "  [REMOVE]  $($game.Name) (AppID $($game.AppId)) - broken icon, no source available" -ForegroundColor Red
+                if ($PSCmdlet.ShouldProcess($shortcutPath, 'Remove shortcut with broken icon')) {
+                    Remove-Item -LiteralPath $shortcutPath -Force
+                }
             }
         }
     }
@@ -986,7 +989,10 @@ if (-not (Test-Path $EpicManifests)) {
                 Write-Host "  [FIX]     $($game.DisplayName)" -ForegroundColor Yellow
                 Set-UrlIconFile -Path $shortcutPath -IconFile $iconFile
             } else {
-                Write-Host "  [SKIP]    $($game.DisplayName) - broken icon, exe not found: $($game.ExePath)" -ForegroundColor DarkYellow
+                Write-Host "  [REMOVE]  $($game.DisplayName) - broken icon, exe not found: $($game.ExePath)" -ForegroundColor Red
+                if ($PSCmdlet.ShouldProcess($shortcutPath, 'Remove shortcut with broken icon')) {
+                    Remove-Item -LiteralPath $shortcutPath -Force
+                }
             }
         }
     }
@@ -1064,7 +1070,10 @@ if ($xboxGames.Count -eq 0) {
                 Write-Host "  [FIX]     $($game.DisplayName)" -ForegroundColor Yellow
                 Set-LnkIconFile -Path $shortcutPath -IconFile $icoPath
             } else {
-                Write-Host "  [SKIP]    $($game.DisplayName) - broken icon, no source available" -ForegroundColor DarkYellow
+                Write-Host "  [REMOVE]  $($game.DisplayName) - broken icon, no source available" -ForegroundColor Red
+                if ($PSCmdlet.ShouldProcess($shortcutPath, 'Remove shortcut with broken icon')) {
+                    Remove-Item -LiteralPath $shortcutPath -Force
+                }
             }
         }
     }
@@ -1190,7 +1199,10 @@ if ($storeGames.Count -eq 0) {
                 Write-Host "  [FIX]     $($game.DisplayName)" -ForegroundColor Yellow
                 Set-LnkIconFile -Path $shortcutPath -IconFile $icoPath
             } else {
-                Write-Host "  [SKIP]    $($game.DisplayName) - broken icon, no source available" -ForegroundColor DarkYellow
+                Write-Host "  [REMOVE]  $($game.DisplayName) - broken icon, no source available" -ForegroundColor Red
+                if ($PSCmdlet.ShouldProcess($shortcutPath, 'Remove shortcut with broken icon')) {
+                    Remove-Item -LiteralPath $shortcutPath -Force
+                }
             }
         }
     }
