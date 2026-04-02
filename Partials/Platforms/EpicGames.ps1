@@ -56,12 +56,15 @@ function Sync-EpicGames {
     }
 
     $installedEpicNames = $games | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
+    $installedEpicNamesLegacy = $installedEpicNames | ForEach-Object { $_ -replace ' ', '_' }
+    $installedEpicNamesCombined = @($installedEpicNames + $installedEpicNamesLegacy) | Select-Object -Unique
+
     if (Test-Path $EpicMenu) {
         # If Epic and Store share a folder, removal is handled once in the Store
         # section against a combined installed set to avoid cross-deleting links.
         if ($EpicMenu -ne $MsStoreMenu) {
             Get-ChildItem $EpicMenu -Filter '*.url' | ForEach-Object {
-                if ($installedEpicNames -notcontains $_.BaseName) {
+                if ($installedEpicNamesCombined -notcontains $_.BaseName) {
                     Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
                     if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
                         Remove-Item -LiteralPath $_.FullName -Force
@@ -72,13 +75,31 @@ function Sync-EpicGames {
     }
 
     foreach ($game in ($games | Sort-Object DisplayName)) {
-        $safeName     = Get-SafeFilename -Name $game.DisplayName
-        $shortcutPath = Join-Path $EpicMenu "$safeName.url"
+        $safeName      = Get-SafeFilename -Name $game.DisplayName
+        $legacySafeName = $safeName -replace ' ', '_'
+        $shortcutPath  = Join-Path $EpicMenu "$safeName.url"
+        $legacyShortcutPath = Join-Path $EpicMenu "$legacySafeName.url"
+
+        # Migrate legacy underscore shortcut names to preferred spaced names
+        if ((-not (Test-Path $shortcutPath)) -and (Test-Path $legacyShortcutPath)) {
+            Write-Host "  [MIGRATE] Renaming legacy shortcut $legacySafeName.url -> $safeName.url" -ForegroundColor Cyan
+            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Rename legacy shortcut')) {
+                Rename-Item -Path $legacyShortcutPath -NewName (Split-Path $shortcutPath -Leaf) -Force
+            }
+        }
+
+        # Clean up duplicate legacy shortcut if both exist
+        if ((Test-Path $shortcutPath) -and (Test-Path $legacyShortcutPath) -and ($legacyShortcutPath -ne $shortcutPath)) {
+            Write-Host "  [REMOVE] Duplicate legacy shortcut $legacySafeName.url" -ForegroundColor Red
+            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Remove duplicate shortcut')) {
+                Remove-Item -LiteralPath $legacyShortcutPath -Force
+            }
+        }
 
         # Custom override takes priority; fall back to the game exe
         $customIco = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
         if (-not $customIco -and $UseSteamGridDb) {
-            $sgdbKey = if ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($game.DisplayName)) { $game.DisplayName } elseif ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($safeName)) { $safeName } else { $null }
+            $sgdbKey = if ($global:SteamGridDbPreferredIconIdsByAppId.ContainsKey($game.DisplayName)) { $game.DisplayName } elseif ($global:SteamGridDbPreferredIconIdsByAppId.ContainsKey($safeName)) { $safeName } else { $null }
             if ($sgdbKey) {
                 $customIco = Get-SteamGridDbIcoPath -AppId $sgdbKey -SafeName "epic.$safeName" -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache -Refresh:$RefreshSteamGridDb -GameName $game.DisplayName
             }

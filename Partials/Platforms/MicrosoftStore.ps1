@@ -3,28 +3,55 @@
 function Sync-MicrosoftStoreGames {
     param(
         [string]$MsStoreMenu,
+        [string]$LegacyMsStoreMenu = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Microsoft Store",
         [string]$CustomIconsPath,
         [string]$SteamGridDbCache,
         [string]$UwpIconCache,
-        [string[]]$InstalledXboxNames = @()
+        [string[]]$InstalledXboxNames = @(),
+        [string[]]$IncludeStorePackages = @()
     )
     
     Write-Host "`n=== Microsoft Store Games ===" -ForegroundColor Cyan
+
+    if (-not (Test-Path $MsStoreMenu)) {
+        if ($PSCmdlet.ShouldProcess($MsStoreMenu, 'Create directory')) {
+            New-Item -ItemType Directory -Path $MsStoreMenu | Out-Null
+        }
+    }
+
+    # Migrate legacy Store shortcuts into the unified Games folder.
+    if ($LegacyMsStoreMenu -and ($LegacyMsStoreMenu -ne $MsStoreMenu) -and (Test-Path $LegacyMsStoreMenu)) {
+        Get-ChildItem -LiteralPath $LegacyMsStoreMenu -Filter '*.lnk' -ErrorAction SilentlyContinue | ForEach-Object {
+            $destinationPath = Join-Path $MsStoreMenu $_.Name
+            if (-not (Test-Path $destinationPath)) {
+                Write-Host "  [MIGRATE] $($_.Name) from legacy Microsoft Store folder" -ForegroundColor Cyan
+                if ($PSCmdlet.ShouldProcess($_.FullName, "Move shortcut to $MsStoreMenu")) {
+                    Move-Item -LiteralPath $_.FullName -Destination $destinationPath -Force
+                }
+            } else {
+                if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove duplicate legacy shortcut')) {
+                    Remove-Item -LiteralPath $_.FullName -Force
+                }
+            }
+        }
+    }
 
     # Merge capability-detected games with any explicitly included packages
     $storeGames = [System.Collections.Generic.List[object]]::new()
     foreach ($g in @(Get-UwpGameList -StoreOnly)) { $storeGames.Add($g) }
 
-    # Merge persisted include list from settings.json
-    if ($script:Settings.includeStorePackages.Count -gt 0) {
-        $IncludeStorePackages = @($IncludeStorePackages) + @($script:Settings.includeStorePackages) | Select-Object -Unique
-    }
-
     if ($IncludeStorePackages.Count -gt 0) {
         $knownFamilyNames = $storeGames | ForEach-Object { $_.PackageFamilyName }
-        $allPkgs = $null
-        try   { $allPkgs = Get-AppxPackage -AllUsers -ErrorAction Stop }
-        catch { $allPkgs = Get-AppxPackage -ErrorAction SilentlyContinue }
+        $allPkgs = @()
+        try {
+            $allPkgs += @(Get-AppxPackage -AllUsers -ErrorAction Stop)
+        } catch {
+            # Ignore and continue with current-user inventory.
+        }
+        $allPkgs += @(Get-AppxPackage -ErrorAction SilentlyContinue)
+        $allPkgs = $allPkgs |
+            Group-Object PackageFamilyName |
+            ForEach-Object { $_.Group | Select-Object -First 1 }
         foreach ($pattern in $IncludeStorePackages) {
             $matched = $allPkgs | Where-Object { $_.Name -like $pattern -and -not $_.IsFramework -and -not $_.IsResourcePackage }
             foreach ($pkg in $matched) {
@@ -65,18 +92,15 @@ function Sync-MicrosoftStoreGames {
         return
     }
 
-    if (-not (Test-Path $MsStoreMenu)) {
-        if ($PSCmdlet.ShouldProcess($MsStoreMenu, 'Create directory')) {
-            New-Item -ItemType Directory -Path $MsStoreMenu | Out-Null
-        }
-    }
-
     $installedStoreNames = $storeGames | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
+    $installedStoreNamesLegacy = $installedStoreNames | ForEach-Object { $_ -replace ' ', '_' }
+    $installedStoreNamesCombined = @($installedStoreNames + $installedStoreNamesLegacy) | Select-Object -Unique
+
     if (Test-Path $MsStoreMenu) {
         # Shared Xbox+Store folder cleanup: keep anything installed in either list.
-        $installedSharedNames = $installedStoreNames
+        $installedSharedNames = $installedStoreNamesCombined
         if ($MsStoreMenu -eq $XboxMenu) {
-            $installedSharedNames = @($installedStoreNames + $InstalledXboxNames) | Select-Object -Unique
+            $installedSharedNames = @($installedStoreNamesCombined + $InstalledXboxNames) | Select-Object -Unique
         }
 
         Get-ChildItem $MsStoreMenu -Filter '*.lnk' | ForEach-Object {
@@ -90,13 +114,29 @@ function Sync-MicrosoftStoreGames {
     }
 
     foreach ($game in $storeGames) {
-        $safeName     = Get-SafeFilename -Name $game.DisplayName
-        $shortcutPath = Join-Path $MsStoreMenu "$safeName.lnk"
-        $aumId        = "$($game.PackageFamilyName)!$($game.AppId)"
+        $safeName      = Get-SafeFilename -Name $game.DisplayName
+        $legacySafeName = $safeName -replace ' ', '_'
+        $shortcutPath  = Join-Path $MsStoreMenu "$safeName.lnk"
+        $legacyShortcutPath = Join-Path $MsStoreMenu "$legacySafeName.lnk"
+        $aumId         = "$($game.PackageFamilyName)!$($game.AppId)"
+
+        if ((-not (Test-Path $shortcutPath)) -and (Test-Path $legacyShortcutPath)) {
+            Write-Host "  [MIGRATE] Renaming legacy shortcut $legacySafeName.lnk -> $safeName.lnk" -ForegroundColor Cyan
+            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Rename legacy shortcut')) {
+                Rename-Item -Path $legacyShortcutPath -NewName (Split-Path $shortcutPath -Leaf) -Force
+            }
+        }
+
+        if ((Test-Path $shortcutPath) -and (Test-Path $legacyShortcutPath) -and ($legacyShortcutPath -ne $shortcutPath)) {
+            Write-Host "  [REMOVE] Duplicate legacy shortcut $legacySafeName.lnk" -ForegroundColor Red
+            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Remove duplicate shortcut')) {
+                Remove-Item -LiteralPath $legacyShortcutPath -Force
+            }
+        }
 
         $customIco = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
         if (-not $customIco -and $UseSteamGridDb) {
-            $sgdbKey = if ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($game.DisplayName)) { $game.DisplayName } elseif ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($safeName)) { $safeName } else { $null }
+            $sgdbKey = if ($global:SteamGridDbPreferredIconIdsByAppId.ContainsKey($game.DisplayName)) { $game.DisplayName } elseif ($global:SteamGridDbPreferredIconIdsByAppId.ContainsKey($safeName)) { $safeName } else { $null }
             if ($sgdbKey) {
                 $customIco = Get-SteamGridDbIcoPath -AppId $sgdbKey -SafeName "msstore.$safeName" -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache -Refresh:$RefreshSteamGridDb
             }

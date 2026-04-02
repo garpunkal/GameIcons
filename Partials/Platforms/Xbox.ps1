@@ -24,12 +24,15 @@ function Sync-XboxGamePass {
     }
 
     $installedXboxNames = $xboxGames | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
+    $installedXboxNamesLegacy = $installedXboxNames | ForEach-Object { $_ -replace ' ', '_' }
+    $installedXboxNamesCombined = @($installedXboxNames + $installedXboxNamesLegacy) | Select-Object -Unique
+
     if (Test-Path $XboxMenu) {
         # If Xbox and Store share a folder, removal is handled once in the Store
         # section against a combined installed set to avoid cross-deleting links.
         if ($XboxMenu -ne $MsStoreMenu) {
             Get-ChildItem $XboxMenu -Filter '*.lnk' | ForEach-Object {
-                if ($installedXboxNames -notcontains $_.BaseName) {
+                if ($installedXboxNamesCombined -notcontains $_.BaseName) {
                     Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
                     if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
                         Remove-Item -LiteralPath $_.FullName -Force
@@ -40,13 +43,29 @@ function Sync-XboxGamePass {
     }
 
     foreach ($game in $xboxGames) {
-        $safeName     = Get-SafeFilename -Name $game.DisplayName
-        $shortcutPath = Join-Path $XboxMenu "$safeName.lnk"
-        $aumId        = "$($game.PackageFamilyName)!$($game.AppId)"
+        $safeName      = Get-SafeFilename -Name $game.DisplayName
+        $legacySafeName = $safeName -replace ' ', '_'
+        $shortcutPath  = Join-Path $XboxMenu "$safeName.lnk"
+        $legacyShortcutPath = Join-Path $XboxMenu "$legacySafeName.lnk"
+        $aumId         = "$($game.PackageFamilyName)!$($game.AppId)"
+
+        if ((-not (Test-Path $shortcutPath)) -and (Test-Path $legacyShortcutPath)) {
+            Write-Host "  [MIGRATE] Renaming legacy shortcut $legacySafeName.lnk -> $safeName.lnk" -ForegroundColor Cyan
+            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Rename legacy shortcut')) {
+                Rename-Item -Path $legacyShortcutPath -NewName (Split-Path $shortcutPath -Leaf) -Force
+            }
+        }
+
+        if ((Test-Path $shortcutPath) -and (Test-Path $legacyShortcutPath) -and ($legacyShortcutPath -ne $shortcutPath)) {
+            Write-Host "  [REMOVE] Duplicate legacy shortcut $legacySafeName.lnk" -ForegroundColor Red
+            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Remove duplicate shortcut')) {
+                Remove-Item -LiteralPath $legacyShortcutPath -Force
+            }
+        }
 
         $customIco = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
         if (-not $customIco -and $UseSteamGridDb) {
-            $sgdbKey = if ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($game.DisplayName)) { $game.DisplayName } elseif ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($safeName)) { $safeName } else { $null }
+            $sgdbKey = if ($global:SteamGridDbPreferredIconIdsByAppId.ContainsKey($game.DisplayName)) { $game.DisplayName } elseif ($global:SteamGridDbPreferredIconIdsByAppId.ContainsKey($safeName)) { $safeName } else { $null }
             if ($sgdbKey) {
                 $customIco = Get-SteamGridDbIcoPath -AppId $sgdbKey -SafeName "xbox.$safeName" -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache -Refresh:$RefreshSteamGridDb
             }

@@ -30,6 +30,9 @@ function Sync-SteamGames {
     $games = Get-SteamAppManifests -LibraryPaths $libs
 
     $installedSteamNames = $games | ForEach-Object { Get-SafeFilename -Name $_.Name }
+    $installedSteamNamesLegacy = $installedSteamNames | ForEach-Object { $_ -replace ' ', '_' }
+    $installedSteamNamesCombined = @($installedSteamNames + $installedSteamNamesLegacy) | Select-Object -Unique
+
     if (Test-Path $SteamMenu) {
         Get-ChildItem $SteamMenu -Filter '*.url' | ForEach-Object {
             # In shared folders, only clean up Steam-owned .url shortcuts.
@@ -37,7 +40,7 @@ function Sync-SteamGames {
             $isSteamShortcut = $raw -match '(?m)^URL=steam://rungameid/'
             if (-not $isSteamShortcut) { return }
 
-            if ($installedSteamNames -notcontains $_.BaseName) {
+            if ($installedSteamNamesCombined -notcontains $_.BaseName) {
                 Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
                 if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
                     Remove-Item -LiteralPath $_.FullName -Force
@@ -47,10 +50,30 @@ function Sync-SteamGames {
     }
 
     foreach ($game in ($games | Sort-Object Name)) {
+        $index = [array]::IndexOf($games, $game) + 1
+        Write-ProgressIndicator -Current $index -Total $games.Count -Activity "Processing Steam Games" -Status $game.Name
         $safeName     = Get-SafeFilename -Name $game.Name
+        $legacySafeName = $safeName -replace ' ', '_'
         $steamIconCacheKey = "steam.$($game.AppId)"
         $shortcutPath = Join-Path $SteamMenu "$safeName.url"
+        $legacyShortcutPath = Join-Path $SteamMenu "$legacySafeName.url"
         $url          = "steam://rungameid/$($game.AppId)"
+
+        # Migrate legacy underscore shortcut names to preferred spaced names
+        if ((-not (Test-Path $shortcutPath)) -and (Test-Path $legacyShortcutPath)) {
+            Write-Host "  [MIGRATE] Renaming legacy shortcut $legacySafeName.url -> $safeName.url" -ForegroundColor Cyan
+            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Rename legacy shortcut')) {
+                Rename-Item -Path $legacyShortcutPath -NewName (Split-Path $shortcutPath -Leaf) -Force
+            }
+        }
+
+        # Clean up duplicate legacy shortcut if both exist
+        if ((Test-Path $shortcutPath) -and (Test-Path $legacyShortcutPath) -and ($legacyShortcutPath -ne $shortcutPath)) {
+            Write-Host "  [REMOVE] Duplicate legacy shortcut $legacySafeName.url" -ForegroundColor Red
+            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Remove duplicate shortcut')) {
+                Remove-Item -LiteralPath $legacyShortcutPath -Force
+            }
+        }
 
         # Icon resolution with priority chain
         $icoPath = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
@@ -104,4 +127,7 @@ function Sync-SteamGames {
             }
         }
     }
+
+    # Clear progress bar
+    Write-Progress -Activity "Processing Steam Games" -Completed
 }

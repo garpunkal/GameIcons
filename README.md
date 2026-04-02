@@ -1,13 +1,20 @@
 # GameIcons
 
-A PowerShell script that syncs your installed game libraries to Start Menu shortcuts, creating missing shortcuts and fixing broken icon paths.
-
-Supports:
+A robust PowerShell script that automatically syncs your installed game libraries across multiple launchers to Start Menu shortcuts. Features intelligent icon resolution, progress tracking, and comprehensive error handling.
 - **Steam** — reads all library folders and installed game manifests
 - **Epic Games** — reads the launcher manifest folder
 - **Xbox Game Pass** — enumerates installed AppX packages via Xbox Live / `ms-xbl-*` capability detection
 - **Microsoft Store** — enumerates installed AppX packages via gaming capability detection, with an opt-in list for games that declare no standard gaming capabilities
 - **Ubisoft Connect** — reads game manifests from the Ubisoft Game Launcher data folder
+
+## ✨ Features
+
+- **Multi-Platform Support**: Syncs games from Steam, Epic Games, Xbox Game Pass, Microsoft Store, and Ubisoft Connect
+- **Intelligent Icon Resolution**: Priority-based icon lookup (Custom → SteamGridDB → Local assets → Fallback)
+- **Progress Tracking**: Visual progress bars for long-running operations
+- **Robust Error Handling**: Retry logic for network operations, graceful failure recovery
+- **WhatIf Support**: Preview changes before execution
+- **Custom Icon Overrides**: Drop custom icons to override auto-detected ones
 
 ---
 
@@ -17,24 +24,70 @@ Supports:
 - PowerShell 5.1 or later
 - No external modules required
 
+## � Quick Start
+
+1. Download `Sync.ps1` and place it in a folder
+2. **Optional**: Edit `settings.json` to customize paths for game installations and Start Menu folders
+3. Open PowerShell as Administrator
+4. Navigate to the script folder
+5. Run: `.\Sync.ps1 -WhatIf` (preview mode)
+6. Run: `.\Sync.ps1` (to create shortcuts)
+
+For Steam icons, get an API key from [SteamGridDB](https://www.steamgriddb.com) and set it in your environment:
+```powershell
+$env:STEAMGRIDDB_API_KEY = 'your-api-key-here'
+.\Sync.ps1
+```
+
+### Configuration
+
+The script can be configured via `settings.json`:
+
+- **Game Paths**: Set custom paths for game installations (e.g., `"ubisoftInstall": "S:\\ubisoft"`)
+- **Menu Path**: Set a single destination folder via `gamesMenu`
+- **Cache Paths**: Configure where icons and cache files are stored
+- **Exclusions**: Define games to skip or custom icon preferences
+
+Example `settings.json`:
+```json
+{
+  "paths": {
+    "steamInstall": "C:\\Program Files (x86)\\Steam",
+    "ubisoftInstall": "S:\\ubisoft",
+    "gamesMenu": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Games"
+  }
+}
+```
+
+## 🏗️ Architecture
+
+The script uses a modular architecture with separate files for different concerns:
+
+- `Sync.ps1` - Main orchestrator script
+- `Partials/Helpers.ps1` - Utility functions for parsing, names, and discovery
+- `Partials/IconResolution.ps1` - Icon downloading and caching logic
+- `Partials/ShortcutOperations.ps1` - Shortcut creation and management
+- `Partials/Settings.ps1` - Configuration loading and menu path setup
+- `Partials/Platforms/` - Platform-specific game detection logic
+
 ---
 
 ## Usage
 
 ```powershell
-.\Sync-GameShortcuts.ps1
+.\Sync.ps1
 ```
 
 You can also run it explicitly with PowerShell 7:
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File .\Sync-GameShortcuts.ps1
+pwsh -ExecutionPolicy Bypass -File .\Sync.ps1
 ```
 
-Put all generated shortcuts into a dedicated Games Start Menu folder:
+All generated shortcuts are written to a dedicated Games Start Menu folder:
 
 ```powershell
-.\Sync-GameShortcuts.ps1 -UseGamesFolderForAll
+.\Sync.ps1
 ```
 
 This defaults to:
@@ -46,34 +99,20 @@ This defaults to:
 Choose a custom final destination folder:
 
 ```powershell
-.\Sync-GameShortcuts.ps1 -UseGamesFolderForAll -GamesMenu "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\My Games"
+.\Sync.ps1 -GamesMenu "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\My Games"
 ```
-
-Legacy mode (puts non-Steam shortcuts in Steam folder):
-
-```powershell
-.\Sync-GameShortcuts.ps1 -UseSteamFolderForAll
-```
-
-If both switches are provided, `-UseGamesFolderForAll` takes precedence.
 
 Preview changes without writing anything:
 
 ```powershell
-.\Sync-GameShortcuts.ps1 -WhatIf
+.\Sync.ps1 -WhatIf
 ```
 
-Use SteamGridDB for Steam icon downloads (falls back to local Steam artwork when needed):
-
-```powershell
-.\Sync-GameShortcuts.ps1 -UseSteamGridDb -SteamGridDbApiKey '<your-api-key>'
-```
-
-Or set the API key once via environment variable:
+SteamGridDB support is enabled by default. Set the API key once via environment variable:
 
 ```powershell
 $env:STEAMGRIDDB_API_KEY = '<your-api-key>'
-.\Sync-GameShortcuts.ps1 -UseSteamGridDb
+.\Sync.ps1
 ```
 
 To persist it for future terminals and logins (recommended):
@@ -85,23 +124,13 @@ setx STEAMGRIDDB_API_KEY "<your-api-key>"
 Then open a new terminal before running the script again.
 
 If a `.env` file exists next to the script with `STEAMGRIDDB_API_KEY=...`,
-the script now auto-loads it when no explicit/environment key is already set.
+the script auto-loads it when no environment key is set.
 
 ```dotenv
 STEAMGRIDDB_API_KEY=<your-api-key>
 ```
 
-To have the script persist the resolved key to your User environment:
-
-```powershell
-.\Sync-GameShortcuts.ps1 -UseSteamGridDb -PersistSteamGridDbApiKey
-```
-
-Force refresh of cached SteamGridDB icons:
-
-```powershell
-.\Sync-GameShortcuts.ps1 -UseSteamGridDb -RefreshSteamGridDb
-```
+Advanced SteamGridDB/cache behavior can be controlled through `settings.json`.
 
 By default, the script triggers a Windows icon cache refresh and then restarts
 Explorer at the end.
@@ -109,41 +138,24 @@ Explorer at the end.
 Disable both steps if needed:
 
 ```powershell
-.\Sync-GameShortcuts.ps1 -SkipIconCacheRefresh
+.\Sync.ps1 -SkipIconCacheRefresh
 ```
 
 Disable only the Explorer restart while keeping icon cache refresh:
 
 ```powershell
-.\Sync-GameShortcuts.ps1 -SkipExplorerRestart
+.\Sync.ps1 -SkipExplorerRestart
 ```
 
 ### Parameters
 
 | Parameter | Default | Description |
 |---|---|---|
-| `SteamInstall` | `C:\Program Files (x86)\Steam` | Path to your Steam installation |
-| `SteamMenu` | `%APPDATA%\...\Programs\Steam` | Start Menu folder for Steam shortcuts |
-| `UseGamesFolderForAll` | `False` | Routes Steam/Epic/Xbox/Microsoft Store/Ubisoft Connect shortcuts into the folder set by `GamesMenu` |
-| `GamesMenu` | `%APPDATA%\...\Programs\Games` | Final destination folder used when `UseGamesFolderForAll` is enabled |
-| `UseSteamFolderForAll` | `False` | Legacy: routes Epic/Xbox/Microsoft Store/Ubisoft Connect shortcuts into the same folder as `SteamMenu` |
-| `EpicMenu` | `%APPDATA%\...\Programs\Epic Games` | Start Menu folder for Epic shortcuts |
-| `EpicManifests` | `C:\ProgramData\Epic\...\Manifests` | Path to Epic launcher manifests |
-| `XboxMenu` | `%APPDATA%\...\Programs\Xbox` | Start Menu folder for Xbox shortcuts |
-| `MsStoreMenu` | `%APPDATA%\...\Programs\Microsoft Store` | Start Menu folder for Store game shortcuts |
-| `UbisoftMenu` | `%APPDATA%\...\Programs\Games` | Start Menu folder for Ubisoft Connect shortcuts |
-| `UwpIconCache` | `.\UwpIconCache` | Folder where extracted UWP logos are cached as `.ico` files |
-| `IncludeStorePackages` | `@()` | Package name patterns to force-include in the MS Store section (see below) |
-| `SettingsPath` | `.\config\settings.json` | JSON file with exclusion lists, publisher prefixes, and other configuration |
-| `CustomIconsPath` | `.\CustomIcons` | Folder for custom icon overrides (see below) |
-| `UseSteamGridDb` | `False` | Enables Steam icon lookup from SteamGridDB before local Steam fallback |
-| `SteamGridDbApiKey` | `$env:STEAMGRIDDB_API_KEY` | SteamGridDB API key (uses environment variable if omitted) |
-| `DotEnvPath` | `.\.env` | Optional `.env` file path used to load `STEAMGRIDDB_API_KEY` when needed |
-| `PersistSteamGridDbApiKey` | `False` | Saves resolved SteamGridDB API key to User environment for future terminals |
-| `SteamGridDbCache` | `.\SteamGridDbCache` | Cache folder for SteamGridDB-downloaded icon assets |
-| `RefreshSteamGridDb` | `False` | Re-download SteamGridDB assets instead of using cached files |
+| `GamesMenu` | `%APPDATA%\...\Programs\Games` | Single destination folder for all generated shortcuts |
 | `SkipIconCacheRefresh` | `False` | Skips the final Windows icon cache refresh step |
 | `SkipExplorerRestart` | `False` | Skips restarting Explorer after icon cache refresh |
+
+Most advanced behavior (launcher paths, include lists, cache paths, icon settings) is configured in `settings.json`.
 
 ---
 
@@ -169,7 +181,7 @@ When both a custom icon and SteamGridDB are available, `CustomIcons` takes prior
 
 Some Microsoft Store games don't declare any gaming capabilities in their manifest (e.g. games built with certain Unity or web-based frameworks). These won't be auto-detected by the Store section.
 
-To force-include them, add their package `Name` to the `includeStorePackages` array in `config/settings.json`. Wildcards are supported.
+To force-include them, add their package `Name` to the `includeStorePackages` array in `settings.json`. Wildcards are supported.
 
 ```json
 {
@@ -178,12 +190,6 @@ To force-include them, add their package `Name` to the `includeStorePackages` ar
     "SomePublisher.*"
   ]
 }
-```
-
-You can also pass them directly via the `-IncludeStorePackages` parameter:
-
-```powershell
-.\Sync-GameShortcuts.ps1 -IncludeStorePackages 'TrivialTechnology.UltimateRummy500'
 ```
 
 To find a package name for an installed Store app:
@@ -204,10 +210,11 @@ The script automatically detects Ubisoft Connect installations and reads game ma
 
 It parses `game.json` and `installation.json` files to extract game metadata and creates `uplay://launch/{game_id}` URL shortcuts.
 
-Ubisoft Connect games use the same icon resolution priority as other platforms:
+Ubisoft Connect games use the following icon resolution priority:
 1. Custom icons from `CustomIcons/` folder
-2. SteamGridDB icons (when `-UseSteamGridDb` is enabled)
-3. Ubisoft launcher executable icon as fallback
+2. Ubisoft game executable icon as fallback
+
+Ubisoft shortcuts are created only for entries that have a valid Ubisoft game id.
 
 ---
 
@@ -230,9 +237,40 @@ Each game is reported with one of these statuses:
 | Path | Purpose |
 |---|---|
 | `UwpIconCache/` | Cached `.ico` files extracted from UWP package assets. Safe to delete — regenerated on next run. |
-| `SteamGridDbCache/` | Cached SteamGridDB icon assets. Safe to delete — regenerated when `-UseSteamGridDb` is used. |
+| `SteamGridDbCache/` | Cached SteamGridDB icon assets. Safe to delete — regenerated on next run. |
 | `CustomIcons/` | Your custom icon overrides. Not touched by the script. |
-| `config/settings.json` | Consolidated settings: exclusion lists, publisher prefixes, SGDB icon exclusions, and Store package overrides. |
+| `settings.json` | Consolidated settings: exclusion lists, publisher prefixes, SGDB icon exclusions, and Store package overrides. |
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**"Access denied" or permission errors:**
+- Run PowerShell as Administrator
+- Ensure the script directory is writable
+
+**Steam games not detected:**
+- Verify `paths.steamInstall` in `settings.json`
+- Check that Steam is installed and has games
+
+**Icons not downloading:**
+- Verify SteamGridDB API key is correct
+- Check internet connection
+- Clear `SteamGridDbCache/` to force a re-download
+
+**Script runs slowly:**
+- First run downloads icons and may take time
+- Subsequent runs are faster due to caching
+
+**Ubisoft Connect not detected:**
+- Ensure Ubisoft Connect is installed
+- Check that games are installed through Ubisoft Connect
+
+### Getting Help
+
+- Use `-WhatIf` to preview changes without making them
+- Check the output for `[ERROR]`, `[WARN]`, or `[SKIP]` messages
+- Review `settings.json` for configuration issues
 
 ---
 

@@ -1,5 +1,26 @@
 # Utility functions for file operations, conversions, and data handling
 
+function Write-ProgressIndicator {
+    # Display progress for long-running operations
+    param(
+        [int]$Current,
+        [int]$Total,
+        [string]$Activity = "Processing",
+        [string]$Status = ""
+    )
+
+    if ($Total -le 0) { return }
+
+    $percent = [math]::Min(100, [math]::Round(($Current / $Total) * 100))
+    $progressParams = @{
+        Activity = $Activity
+        Status = $Status
+        PercentComplete = $percent
+    }
+
+    Write-Progress @progressParams
+}
+
 function Get-CustomIcoPath {
     # Returns a .ico path from the CustomIcons folder for the given safe name,
     # converting a .png override to .ico on-the-fly if needed.
@@ -7,25 +28,31 @@ function Get-CustomIcoPath {
     param([string]$SafeName, [string]$CustomIconsPath)
     if (-not (Test-Path $CustomIconsPath)) { return $null }
 
-    # Direct .ico override
-    $icoOverride = Join-Path $CustomIconsPath "$SafeName.ico"
-    if (Test-Path $icoOverride) { return $icoOverride }
+    $candidateNames = @($SafeName)
+    $legacyName = $SafeName -replace ' ', '_'
+    if ($legacyName -ne $SafeName) { $candidateNames += $legacyName }
 
-    # .png override -> auto-convert to .ico alongside the source file
-    $pngOverride = Join-Path $CustomIconsPath "$SafeName.png"
-    if (Test-Path $pngOverride) {
-        if ($PSCmdlet.ShouldProcess($icoOverride, 'Convert PNG to ICO')) {
-            ConvertImageToIco -SourcePath $pngOverride -DestPath $icoOverride
+    foreach ($name in $candidateNames | Select-Object -Unique) {
+        $icoOverride = Join-Path $CustomIconsPath "$name.ico"
+        if (Test-Path $icoOverride) { return $icoOverride }
+
+        $pngOverride = Join-Path $CustomIconsPath "$name.png"
+        if (Test-Path $pngOverride) {
+            if ($PSCmdlet.ShouldProcess($icoOverride, 'Convert PNG to ICO')) {
+                ConvertImageToIco -SourcePath $pngOverride -DestPath $icoOverride
+            }
+            return $icoOverride
         }
-        return $icoOverride
     }
     return $null
 }
 
 function Get-SafeFilename {
-    # Remove characters that Windows does not allow in file names
+    # Remove characters that Windows does not allow in file names, but preserve spaces for human-readable Start Menu labels.
     param([string]$Name)
-    ($Name -replace '[\\/:*?"<>|]', '').Trim()
+    if (-not $Name) { return '' }
+    $clean = $Name -replace '[\\/:*?"<>|]', ''
+    return $clean.Trim()
 }
 
 function Get-Settings {
@@ -38,12 +65,16 @@ function Get-Settings {
         steamGridDbExcludedIconIds = @{}
         steamGridDbPreferredIconIds = @{}
         includeStorePackages      = @()
+        paths                     = $null
     }
-    if (-not $Path -or -not (Test-Path $Path)) { return $defaults }
+    if (-not $Path -or -not (Test-Path $Path)) {
+        return $defaults
+    }
     try {
         $json = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json
     } catch {
-        Write-Host "  [WARN]    Failed to parse settings file: $Path" -ForegroundColor DarkYellow
+        Write-Host "  [WARN]    Failed to parse settings file: $Path ($($_.Exception.Message))" -ForegroundColor DarkYellow
+        Write-Host "  [WARN]    Using default settings" -ForegroundColor DarkYellow
         return $defaults
     }
     # Simple arrays
@@ -51,6 +82,10 @@ function Get-Settings {
         if ($json.PSObject.Properties[$key]) {
             $defaults[$key] = @($json.$key)
         }
+    }
+    # Paths object
+    if ($json.PSObject.Properties['paths']) {
+        $defaults['paths'] = $json.paths
     }
     # Map: steamGridDbExcludedIconIds -> hashtable of appId -> string[] iconIds
     if ($json.PSObject.Properties['steamGridDbExcludedIconIds']) {
@@ -142,10 +177,18 @@ function Get-UwpGameList {
     # -StoreOnly : packages with other gaming capabilities but without xboxLive
     param([switch]$XboxOnly, [switch]$StoreOnly)
 
-    # Try all-user packages first (needs elevation); fall back to current-user
-    $packages = $null
-    try   { $packages = Get-AppxPackage -AllUsers -ErrorAction Stop }
-    catch { $packages = Get-AppxPackage -ErrorAction SilentlyContinue }
+    # Merge all-users and current-user views so per-user installs are included
+    # even when -AllUsers succeeds but omits some user-scoped packages.
+    $packages = @()
+    try {
+        $packages += @(Get-AppxPackage -AllUsers -ErrorAction Stop)
+    } catch {
+        # Ignore and continue with current-user inventory.
+    }
+    $packages += @(Get-AppxPackage -ErrorAction SilentlyContinue)
+    $packages = $packages |
+        Group-Object PackageFamilyName |
+        ForEach-Object { $_.Group | Select-Object -First 1 }
 
     foreach ($pkg in $packages) {
         if ($pkg.IsFramework)       { continue }
@@ -156,8 +199,8 @@ function Get-UwpGameList {
         if ($pkg.PackageFamilyName) {
             $pkgFamilyBase = ([string]$pkg.PackageFamilyName -split '_')[0]
         }
-        if (($script:UwpServicePackageNames -contains $pkgName) -or
-            ($pkgFamilyBase -and ($script:UwpServicePackageNames -contains $pkgFamilyBase))) {
+        if (($global:UwpServicePackageNames -contains $pkgName) -or
+            ($pkgFamilyBase -and ($global:UwpServicePackageNames -contains $pkgFamilyBase))) {
             continue
         }
 
@@ -178,7 +221,7 @@ function Get-UwpGameList {
         if ($StoreOnly) {
             $pub      = $pkg.Publisher
             $isMsPub  = $false
-            foreach ($prefix in $script:MsPublisherPrefixes) {
+            foreach ($prefix in $global:MsPublisherPrefixes) {
                 if ($pub -like "$prefix*") { $isMsPub = $true; break }
             }
             if ($isMsPub) { continue }
@@ -233,7 +276,7 @@ function Get-SteamAppManifests {
             $flags      = if ($raw -match '"StateFlags"\s+"(\d+)"') { [int]$matches[1] } else { 0 }
             if (-not $appId -or -not $name) { return }
             # Skip known non-game / redistributable entries
-            if ($script:SteamNonGameIds -contains $appId) { return }
+            if ($global:SteamNonGameIds -contains $appId) { return }
             if ($name -match 'Redistributable|Steamworks Common|SDK|Proton|Steam Linux') { return }
             # StateFlags bit 2 (mask 4) = fully installed; also allow 6 (needs update but playable)
             if (($flags -band 4) -eq 0) { return }

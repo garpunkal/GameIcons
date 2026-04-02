@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd 'j:\\\\git\\\\github\\.com\\\\garpunkal\\\\GameIcons' ; powershell -NoProfile -Command \\{ \\$ast = \\[System\\.Management\\.Automation\\.Language\\.Parser\\]::ParseFile\\('\\.\\\\Partials\\\\Helpers\\.ps1', \\[ref\\]\\$null, \\[ref\\]\\$null\\); if \\(\\$ast\\) \\{ Write-Host 'Syntax OK' \\} else \\{ Write-Host 'Syntax Error' \\} \\}$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

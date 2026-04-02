@@ -35,55 +35,172 @@ function Get-UbisoftInstallPath {
 
 function Get-UbisoftGameList {
     # Enumerate Ubisoft Connect installed games
-    # Games are stored as JSON manifests in %LOCALAPPDATA%\Ubisoft Game Launcher\games
-    
-    $gamesPath = Join-Path $env:LOCALAPPDATA 'Ubisoft Game Launcher\games'
-    
-    if (-not (Test-Path $gamesPath)) {
-        return @()
-    }
+    # Try multiple detection methods: directory scanning, registry, existing shortcuts, and installation directory
+    param([string]$PreferredLibraryRoot = '')
     
     $games = @()
     
-    try {
-        Get-ChildItem $gamesPath -Directory | ForEach-Object {
-            $gameDir = $_.FullName
-            # Look for game metadata: either game.json or installation.json
-            $metadataFiles = @(
-                (Join-Path $gameDir 'game.json'),
-                (Join-Path $gameDir 'installation.json'),
-                (Join-Path $gameDir 'game_identifier.json')
-            )
-            
-            foreach ($metadataFile in $metadataFiles) {
-                if (Test-Path $metadataFile) {
-                    try {
-                        $manifest = Get-Content $metadataFile -Raw | ConvertFrom-Json
+    # Method 1: Check for existing Ubisoft shortcuts and extract game info
+    $startMenuPaths = @(
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs",
+        "$env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs"
+    )
+    
+    $defaultUbisoftInstallDirs = @(
+        'S:\ubisoft',
+        'C:\Program Files (x86)\Ubisoft',
+        'C:\Program Files\Ubisoft',
+        (Join-Path $env:PROGRAMFILES 'Ubisoft'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Ubisoft')
+    )
+    $ubisoftInstallDirs = @($PreferredLibraryRoot) + $defaultUbisoftInstallDirs | Where-Object { $_ } | Select-Object -Unique
+
+    foreach ($startMenuPath in $startMenuPaths) {
+        if (Test-Path $startMenuPath) {
+            Get-ChildItem $startMenuPath -Recurse -Include "*.url" -ErrorAction SilentlyContinue | ForEach-Object {
+                try {
+                    $content = Get-Content $_.FullName -Raw
+                    if ($content -match '(?m)^URL=uplay://launch/(\d+)/') {
+                        $gameId = $matches[1]
+                        $displayName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
                         
-                        # Extract game info - JSON structure varies
-                        $gameId = $manifest.external_id -or $manifest.game_id -or $manifest.id
-                        $displayName = $manifest.game_name -or $manifest.name -or $_.Name
-                        $executablePath = $manifest.installed_path -or $null
+                        # Try to find install path from known locations
+                        $installPath = $null
+                        foreach ($installDir in $ubisoftInstallDirs) {
+                            if (Test-Path $installDir) {
+                                # Try exact match first
+                                $gameDir = Get-ChildItem $installDir -Directory | Where-Object { $_.Name -eq $displayName } | Select-Object -First 1
+                                if (-not $gameDir) {
+                                    # Try fuzzy match (remove special characters and spaces)
+                                    $cleanDisplayName = $displayName -replace '[^a-zA-Z0-9]', ''
+                                    $gameDir = Get-ChildItem $installDir -Directory | Where-Object { ($_.Name -replace '[^a-zA-Z0-9]', '') -eq $cleanDisplayName } | Select-Object -First 1
+                                }
+                                if ($gameDir) {
+                                    $installPath = $gameDir.FullName
+                                    break
+                                }
+                            }
+                        }
                         
-                        if ($displayName -and $gameId) {
+                        # Check if we already have this game
+                        if (-not ($games | Where-Object { $_.GameId -eq $gameId })) {
                             $games += [PSCustomObject]@{
                                 DisplayName    = $displayName
                                 GameId         = $gameId
-                                ExecutablePath = $executablePath
-                                ManifestPath   = $metadataFile
-                                InstallPath    = $gameDir
+                                ExecutablePath = $installPath
+                                ManifestPath   = $_.FullName
+                                InstallPath    = $installPath
                             }
-                            break
                         }
-                    } catch {
-                        # Skip malformed manifests
-                        continue
+                    }
+                } catch {
+                    # Skip invalid shortcuts
+                }
+            }
+        }
+    }
+    
+    # Method 2: Check directory-based storage (original method)
+    $possiblePaths = @(
+        (Join-Path $env:LOCALAPPDATA 'Ubisoft Game Launcher\games'),
+        (Join-Path $env:LOCALAPPDATA 'Ubisoft Game Launcher\data\games'),
+        (Join-Path $env:APPDATA 'Ubisoft Game Launcher\games'),
+        (Join-Path $env:PROGRAMDATA 'Ubisoft Game Launcher\games')
+    )
+    
+    foreach ($gamesPath in $possiblePaths) {
+        if (Test-Path $gamesPath) {
+            Get-ChildItem $gamesPath -Directory | ForEach-Object {
+                $gameDir = $_.FullName
+                # Look for game metadata: various possible filenames
+                $metadataFiles = @(
+                    (Join-Path $gameDir 'game.json'),
+                    (Join-Path $gameDir 'installation.json'),
+                    (Join-Path $gameDir 'metadata.json'),
+                    (Join-Path $gameDir 'game_identifier.json'),
+                    (Join-Path $gameDir 'config.json')
+                )
+                
+                foreach ($metadataFile in $metadataFiles) {
+                    if (Test-Path $metadataFile) {
+                        try {
+                            $manifest = Get-Content $metadataFile -Raw | ConvertFrom-Json
+                            
+                            # Extract game info - JSON structure varies by Ubisoft Connect version
+                            $gameId = $manifest.external_id -or $manifest.game_id -or $manifest.id -or $manifest.uplay_id -or $_.Name
+                            $displayName = $manifest.game_name -or $manifest.name -or $manifest.display_name -or $_.Name
+                            $executablePath = $manifest.installed_path -or $manifest.install_path -or $manifest.executable -or $null
+                            
+                            if ($displayName -and $gameId) {
+                                # Check if we already have this game
+                                if (-not ($games | Where-Object { $_.GameId -eq $gameId })) {
+                                    $games += [PSCustomObject]@{
+                                        DisplayName    = $displayName
+                                        GameId         = $gameId
+                                        ExecutablePath = $executablePath
+                                        ManifestPath   = $metadataFile
+                                        InstallPath    = $gameDir
+                                    }
+                                }
+                                break
+                            }
+                        } catch {
+                            # Skip malformed manifests
+                            continue
+                        }
                     }
                 }
             }
         }
-    } catch {
-        Write-Host "  [WARN]    Failed to enumerate Ubisoft games: $($_.Exception.Message)" -ForegroundColor DarkYellow
+    }
+    
+    # Method 3: Check Ubisoft installation directory for installed games
+    foreach ($installDir in $ubisoftInstallDirs) {
+        if (Test-Path $installDir) {
+            Get-ChildItem $installDir -Directory | Where-Object { $_.Name -ne 'cache' -and $_.Name -notmatch 'Ubisoft Game Launcher' } | ForEach-Object {
+                $gameDir = $_.FullName
+                $displayName = $_.Name
+                
+                # Skip if we already have this game (by name)
+                if ($games | Where-Object { $_.DisplayName -eq $displayName }) {
+                    continue
+                }
+                
+                # Strict mode: skip inferred titles without a launchable Ubisoft game id.
+                if ($displayName -and -not ($games | Where-Object { $_.DisplayName -eq $displayName })) {
+                    $games += [PSCustomObject]@{
+                        DisplayName    = $displayName
+                        GameId         = $null
+                        ExecutablePath = $gameDir
+                        ManifestPath   = $null
+                        InstallPath    = $gameDir
+                    }
+                }
+            }
+        }
+    }
+    
+    # Method 4: Check registry (if other methods fail)
+    if ($games.Count -eq 0) {
+        try {
+            $installedGames = Get-ItemProperty 'HKCU:\Software\Ubisoft\Launcher\Games\*' -ErrorAction SilentlyContinue
+            if ($installedGames) {
+                foreach ($game in $installedGames.PSObject.Properties) {
+                    $gameData = $game.Value
+                    if ($gameData -and $gameData.DisplayName) {
+                        $games += [PSCustomObject]@{
+                            DisplayName    = $gameData.DisplayName
+                            GameId         = $game.Name
+                            ExecutablePath = $gameData.InstallPath
+                            ManifestPath   = $null
+                            InstallPath    = $gameData.InstallPath
+                        }
+                    }
+                }
+            }
+        } catch {
+            # Continue without registry data
+        }
     }
     
     return $games
@@ -92,24 +209,27 @@ function Get-UbisoftGameList {
 function Sync-UbisoftGames {
     param(
         [string]$UbisoftMenu,
-        [string]$CustomIconsPath,
-        [string]$SteamGridDbCache,
-        [string]$UwpIconCache
+        [string]$UbisoftInstall,
+        [string]$CustomIconsPath
     )
     
     Write-Host "`n=== Ubisoft Connect ===" -ForegroundColor Cyan
 
-    $ubisoftInstall = Get-UbisoftInstallPath
+    $ubisoftInstall = if ($UbisoftInstall -and (Test-Path $UbisoftInstall)) {
+        $UbisoftInstall
+    } else {
+        Get-UbisoftInstallPath
+    }
     if (-not $ubisoftInstall) {
         Write-Host "  [SKIP]    Ubisoft Connect not found (not installed or configured)" -ForegroundColor DarkYellow
-        return @()
+        return
     }
 
-    $games = @(Get-UbisoftGameList | Sort-Object DisplayName)
+    $games = @(Get-UbisoftGameList -PreferredLibraryRoot $UbisoftInstall | Sort-Object DisplayName)
     
     if ($games.Count -eq 0) {
         Write-Host "  [SKIP]    No Ubisoft games found" -ForegroundColor DarkYellow
-        return @()
+        return
     }
 
     if (-not (Test-Path $UbisoftMenu)) {
@@ -119,6 +239,8 @@ function Sync-UbisoftGames {
     }
 
     $installedUbisoftNames = $games | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
+    $installedUbisoftNamesLegacy = $installedUbisoftNames | ForEach-Object { $_ -replace ' ', '_' }
+    $installedUbisoftNamesCombined = @($installedUbisoftNames + $installedUbisoftNamesLegacy) | Select-Object -Unique
     
     # Clean up shortcuts for uninstalled games
     if (Test-Path $UbisoftMenu) {
@@ -128,7 +250,7 @@ function Sync-UbisoftGames {
             $isUbisoftShortcut = $raw -match '(?m)^URL=uplay://'
             if (-not $isUbisoftShortcut) { return }
 
-            if ($installedUbisoftNames -notcontains $_.BaseName) {
+            if ($installedUbisoftNamesCombined -notcontains $_.BaseName) {
                 Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
                 if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
                     Remove-Item -LiteralPath $_.FullName -Force
@@ -139,24 +261,66 @@ function Sync-UbisoftGames {
 
     # Process each game
     foreach ($game in $games) {
-        $safeName     = Get-SafeFilename -Name $game.DisplayName
-        $shortcutPath = Join-Path $UbisoftMenu "$safeName.url"
+        if (-not $game.GameId) {
+            Write-Host "  [SKIP]    $($game.DisplayName) - missing Ubisoft game id" -ForegroundColor DarkYellow
+            continue
+        }
+
+        $safeName      = Get-SafeFilename -Name $game.DisplayName
+        $legacySafeName = $safeName -replace ' ', '_'
+        $shortcutPath  = Join-Path $UbisoftMenu "$safeName.url"
+        $legacyShortcutPath = Join-Path $UbisoftMenu "$legacySafeName.url"
         # Ubisoft launcher URL: uplay://launch/{game_id}
+
+        if ((-not (Test-Path $shortcutPath)) -and (Test-Path $legacyShortcutPath)) {
+            Write-Host "  [MIGRATE] Renaming legacy shortcut $legacySafeName.url -> $safeName.url" -ForegroundColor Cyan
+            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Rename legacy shortcut')) {
+                Rename-Item -Path $legacyShortcutPath -NewName (Split-Path $shortcutPath -Leaf) -Force
+            }
+        }
+
+        if ((Test-Path $shortcutPath) -and (Test-Path $legacyShortcutPath) -and ($legacyShortcutPath -ne $shortcutPath)) {
+            Write-Host "  [REMOVE] Duplicate legacy shortcut $legacySafeName.url" -ForegroundColor Red
+            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Remove duplicate shortcut')) {
+                Remove-Item -LiteralPath $legacyShortcutPath -Force
+            }
+        }
         $launchUrl    = "uplay://launch/$($game.GameId)"
 
         # Try to find icon
         $customIco = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
-        if (-not $customIco -and $UseSteamGridDb) {
-            $sgdbKey = if ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($game.DisplayName)) { $game.DisplayName } elseif ($script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($safeName)) { $safeName } else { $null }
-            if ($sgdbKey) {
-                $customIco = Get-SteamGridDbIcoPath -AppId $sgdbKey -SafeName "ubisoft.$safeName" -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache -Refresh:$RefreshSteamGridDb
-            }
-        }
         
-        # Fallback to Ubisoft logo or generic executable icon
-        $iconFile = if ($customIco) { $customIco } else { 
-            # Try to use Ubisoft launcher icon
-            Join-Path $ubisoftInstall 'ubilauncher.exe'
+        # Fallback to game executable or Ubisoft launcher icon
+        $iconFile = if ($customIco) { $customIco } elseif ($game.InstallPath -and (Test-Path $game.InstallPath)) {
+            # Search common executable locations first to avoid deep recursive scans.
+            $exeCandidates = @()
+            $searchDirs = @(
+                $game.InstallPath,
+                (Join-Path $game.InstallPath 'bin'),
+                (Join-Path $game.InstallPath 'bin_plus'),
+                (Join-Path $game.InstallPath 'Binaries'),
+                (Join-Path $game.InstallPath 'Binaries\Win64'),
+                (Join-Path $game.InstallPath 'Binaries\Win32')
+            ) | Select-Object -Unique
+
+            foreach ($dir in $searchDirs) {
+                if (Test-Path $dir) {
+                    $exeCandidates += Get-ChildItem -Path $dir -Filter '*.exe' -File -ErrorAction SilentlyContinue
+                }
+            }
+
+            $gameExe = $exeCandidates |
+                      Where-Object { $_.Name -notmatch "uninstall|eac|crash|service|splash" } |
+                      Sort-Object { 
+                          # Prioritize executables that match the game name or are in bin/bin_plus directories
+                          $priority = 0
+                          if ($_.Name -match "^$($game.DisplayName -replace '[^a-zA-Z0-9]', '').*\.exe$") { $priority -= 10 }
+                          if ($_.DirectoryName -match '\\bin[^\\]*$') { $priority -= 5 }
+                          if ($_.Name -match "launcher|setup|config") { $priority += 5 }
+                          $priority
+                      } | 
+                      Select-Object -First 1
+            if ($gameExe) { $gameExe.FullName } else { $null }
         }
 
         if (-not (Test-Path $shortcutPath)) {
@@ -166,19 +330,26 @@ function Sync-UbisoftGames {
         } else {
             # Shortcut exists: check icon is still valid
             $currentIcon = Get-ShortcutIconPath -Path $shortcutPath -Type 'url'
-            $needsFix = -not $currentIcon -or -not (Test-Path $currentIcon) -or ($customIco -and $currentIcon -ne $customIco)
+            $needsFix = ($currentIcon -and (-not (Test-Path $currentIcon))) -or ($customIco -and $currentIcon -ne $customIco)
             
             if (-not $needsFix) {
                 Write-Host "  [OK]      $($game.DisplayName)" -ForegroundColor DarkGray
-            } elseif (Test-Path $iconFile) {
+            } elseif ($iconFile -and (Test-Path $iconFile)) {
                 Write-Host "  [FIX]     $($game.DisplayName)" -ForegroundColor Yellow
                 Set-UrlIconFile -Path $shortcutPath -IconFile $iconFile
+            } elseif ($iconFile) {
+                Write-Host "  [SKIP]    $($game.DisplayName) - icon file not found" -ForegroundColor DarkYellow
             } else {
-                Write-Host "  [SKIP]    $($game.DisplayName) - no icon available" -ForegroundColor DarkYellow
+                # No new icon, but current is broken, remove it
+                if ($currentIcon -and (-not (Test-Path $currentIcon))) {
+                    Write-Host "  [FIX]     $($game.DisplayName) - removing broken icon" -ForegroundColor Yellow
+                    Set-UrlIconFile -Path $shortcutPath -IconFile ''
+                } else {
+                    Write-Host "  [SKIP]    $($game.DisplayName) - no icon available" -ForegroundColor DarkYellow
+                }
             }
         }
     }
     
-    # Return installed names for potential shared folder deduplication
-    return @($installedUbisoftNames)
+    return
 }

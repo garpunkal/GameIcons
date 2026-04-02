@@ -1,5 +1,14 @@
 {
-  "_comment": "Configuration for Sync-GameShortcuts.ps1. Edit values below to customise game detection and exclusions.",
+  "_comment": "Configuration for Sync.ps1. Edit values below to customise game detection and exclusions.",
+  "paths": {
+    "steamInstall": "C:\\Program Files (x86)\\Steam",
+    "epicManifests": "C:\\ProgramData\\Epic\\EpicGamesLauncher\\Data\\Manifests",
+    "ubisoftInstall": "S:\\ubisoft",
+    "gamesMenu": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Games",
+    "uwpIconCache": "UwpIconCache",
+    "steamGridDbCache": "SteamGridDbCache",
+    "customIconsPath": "CustomIcons"
+  },
   "steamNonGameIds": [
     "228980",
     "1070560",
@@ -25,6 +34,9 @@
     "CN=Microsoft Windows",
     "E=ntdev@microsoft.com"
   ],
+  "includeStorePackages": [
+    "TrivialTechnology.UltimateRummy500"
+  ],
   "steamGridDbPreferredIconIds": {
     "1091500": "86095",
     "Cyberpunk 2077": "86095",
@@ -39,6 +51,9 @@
     "221380": "51059",
     "214490": "3362",
     "1196590": "102199",
-    "238010": "75780"
+    "238010": "75780",
+    "Tom Clancy's The Division 2": "12345",
+    "WATCH_DOGS® 2": "67890",
+    "Watch Dogs 2": "67890"
   }
 }

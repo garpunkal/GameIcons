@@ -52,34 +52,56 @@ if ($PersistSteamGridDbApiKey) {
     }
 }
 
-# New preferred mode: place all shortcuts in an explicit Games folder.
-if ($UseGamesFolderForAll) {
-    $SteamMenu    = $GamesMenu
-    $EpicMenu     = $GamesMenu
-    $XboxMenu     = $GamesMenu
-    $MsStoreMenu  = $GamesMenu
-    $UbisoftMenu  = $GamesMenu
-}
-
-# Convenience switch to place all generated shortcuts in the Steam menu folder.
-if ($UseSteamFolderForAll -and -not $UseGamesFolderForAll) {
-    $EpicMenu     = $SteamMenu
-    $XboxMenu     = $SteamMenu
-    $MsStoreMenu  = $SteamMenu
-    $UbisoftMenu  = $SteamMenu
-}
-
-Write-Host "Shortcut destinations:" -ForegroundColor DarkGray
-Write-Host "  Steam:           $SteamMenu" -ForegroundColor DarkGray
-Write-Host "  Epic Games:      $EpicMenu" -ForegroundColor DarkGray
-Write-Host "  Xbox Game Pass:  $XboxMenu" -ForegroundColor DarkGray
-Write-Host "  Microsoft Store: $MsStoreMenu" -ForegroundColor DarkGray
-Write-Host "  Ubisoft Connect: $UbisoftMenu" -ForegroundColor DarkGray
-
 # Load consolidated settings
-$script:Settings = Get-Settings -Path $SettingsPath
-$script:SteamNonGameIds                   = $script:Settings.steamNonGameIds
-$script:UwpServicePackageNames            = $script:Settings.uwpServicePackageNames
-$script:MsPublisherPrefixes               = $script:Settings.msPublisherPrefixes
-$script:SteamGridDbExcludedIconIdsByAppId = $script:Settings.SteamGridDbExcludedIconIds
-$script:SteamGridDbPreferredIconIdsByAppId = $script:Settings.SteamGridDbPreferredIconIds
+$global:Settings = Get-Settings -Path $SettingsPath
+$rootPath = if ($global:RepoRoot) { $global:RepoRoot } else { $PSScriptRoot }
+
+# Apply path settings from settings.json (parameters take precedence)
+if ($global:Settings.paths) {
+    if ($global:Settings.paths.steamInstall -and -not $PSBoundParameters.ContainsKey('SteamInstall')) {
+        $SteamInstall = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.steamInstall)
+    }
+    if ($global:Settings.paths.epicManifests -and -not $PSBoundParameters.ContainsKey('EpicManifests')) {
+        $EpicManifests = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.epicManifests)
+    }
+    if ($global:Settings.paths.ubisoftInstall) {
+        $UbisoftInstall = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.ubisoftInstall)
+    }
+    if ($global:Settings.paths.gamesMenu -and -not $PSBoundParameters.ContainsKey('GamesMenu')) {
+        $GamesMenu = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.gamesMenu)
+    }
+    if ($global:Settings.paths.uwpIconCache -and -not $PSBoundParameters.ContainsKey('UwpIconCache')) {
+        $UwpIconCache = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.uwpIconCache)
+        # If it's a relative path, make it relative to script root
+        if (-not [System.IO.Path]::IsPathRooted($UwpIconCache)) {
+            $UwpIconCache = Join-Path $rootPath $UwpIconCache
+        }
+    }
+    if ($global:Settings.paths.steamGridDbCache -and -not $PSBoundParameters.ContainsKey('SteamGridDbCache')) {
+        $SteamGridDbCache = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.steamGridDbCache)
+        # If it's a relative path, make it relative to script root
+        if (-not [System.IO.Path]::IsPathRooted($SteamGridDbCache)) {
+            $SteamGridDbCache = Join-Path $rootPath $SteamGridDbCache
+        }
+    }
+    if ($global:Settings.paths.customIconsPath -and -not $PSBoundParameters.ContainsKey('CustomIconsPath')) {
+        $CustomIconsPath = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.customIconsPath)
+        # If it's a relative path, make it relative to script root
+        if (-not [System.IO.Path]::IsPathRooted($CustomIconsPath)) {
+            $CustomIconsPath = Join-Path $rootPath $CustomIconsPath
+        }
+    }
+}
+
+# All platform shortcuts always go to the single configured Games folder.
+$SteamMenu    = $GamesMenu
+$EpicMenu     = $GamesMenu
+$XboxMenu     = $GamesMenu
+$MsStoreMenu  = $GamesMenu
+$UbisoftMenu  = $GamesMenu
+
+$global:SteamNonGameIds                    = $global:Settings.steamNonGameIds
+$global:UwpServicePackageNames             = $global:Settings.uwpServicePackageNames
+$global:MsPublisherPrefixes                = $global:Settings.msPublisherPrefixes
+$global:SteamGridDbExcludedIconIdsByAppId  = $global:Settings.SteamGridDbExcludedIconIds
+$global:SteamGridDbPreferredIconIdsByAppId = $global:Settings.SteamGridDbPreferredIconIds

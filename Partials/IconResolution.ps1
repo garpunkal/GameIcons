@@ -1,7 +1,48 @@
-# Icon resolution strategy - find icons from various sources
+function Invoke-SteamGridDbApiCall {
+    # Wrapper for SteamGridDB API calls with retry logic and better error handling
+    param(
+        [string]$Uri,
+        [hashtable]$Headers,
+        [int]$MaxRetries = 3,
+        [int]$RetryDelaySeconds = 2
+    )
+
+    for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
+        try {
+            $response = Invoke-RestMethod -Method Get -Uri $Uri -Headers $Headers -ErrorAction Stop -TimeoutSec 30
+            return $response
+        } catch {
+            $isLastAttempt = $attempt -eq $MaxRetries
+            $errorMessage = $_.Exception.Message
+
+            if ($errorMessage -match '429|Too Many Requests') {
+                # Rate limited - wait longer
+                $waitTime = $RetryDelaySeconds * 2
+                Write-Host "  [WARN]    Rate limited by SteamGridDB. Waiting ${waitTime}s before retry..." -ForegroundColor DarkYellow
+                Start-Sleep -Seconds $waitTime
+            } elseif ($errorMessage -match '5\d\d|timeout|network') {
+                # Server error or network issue - retry with backoff
+                if (-not $isLastAttempt) {
+                    $waitTime = $RetryDelaySeconds * $attempt
+                    Write-Host "  [WARN]    Network/server error, retrying in ${waitTime}s (attempt $attempt/$MaxRetries)..." -ForegroundColor DarkYellow
+                    Start-Sleep -Seconds $waitTime
+                    continue
+                }
+            } else {
+                # Client error or other issue - don't retry
+                throw
+            }
+
+            if ($isLastAttempt) {
+                throw
+            }
+        }
+    }
+}
 
 function Get-SteamGridDbIcoPath {
     # Returns cached/generated SGDB icon for a Steam appid when available.
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$AppId,
         [string]$SafeName,
@@ -14,13 +55,13 @@ function Get-SteamGridDbIcoPath {
     )
 
     $excludedIds = @()
-    if ($script:SteamGridDbExcludedIconIdsByAppId -and $script:SteamGridDbExcludedIconIdsByAppId.ContainsKey($AppId)) {
-        $excludedIds = @($script:SteamGridDbExcludedIconIdsByAppId[$AppId] | ForEach-Object { [string]$_ })
+    if ($global:SteamGridDbExcludedIconIdsByAppId -and $global:SteamGridDbExcludedIconIdsByAppId.ContainsKey($AppId)) {
+        $excludedIds = @($global:SteamGridDbExcludedIconIdsByAppId[$AppId] | ForEach-Object { [string]$_ })
     }
 
     $preferredId = ''
-    if ($script:SteamGridDbPreferredIconIdsByAppId -and $script:SteamGridDbPreferredIconIdsByAppId.ContainsKey($AppId)) {
-        $preferredId = [string]$script:SteamGridDbPreferredIconIdsByAppId[$AppId]
+    if ($global:SteamGridDbPreferredIconIdsByAppId -and $global:SteamGridDbPreferredIconIdsByAppId.ContainsKey($AppId)) {
+        $preferredId = [string]$global:SteamGridDbPreferredIconIdsByAppId[$AppId]
     }
 
     $cachedCandidates = Get-ChildItem $CachePath -Filter "$SafeName.sgdb*.ico" -ErrorAction SilentlyContinue
@@ -57,7 +98,7 @@ function Get-SteamGridDbIcoPath {
     if ($preferredId) {
         $prefUrl = "https://www.steamgriddb.com/api/v2/icons/${preferredId}"
         try {
-            $prefResp = Invoke-RestMethod -Method Get -Uri $prefUrl -Headers $headers -ErrorAction Stop
+            $prefResp = Invoke-SteamGridDbApiCall -Uri $prefUrl -Headers $headers
             if ($prefResp -and $prefResp.success -and $prefResp.data) {
                 $resp = [PSCustomObject]@{ success = $true; data = @($prefResp.data) }
             }
@@ -70,12 +111,12 @@ function Get-SteamGridDbIcoPath {
     if (-not $resp) {
         $apiUrl = "https://www.steamgriddb.com/api/v2/icons/steam/${AppId}?styles=${Styles}&types=static&mimes=image/vnd.microsoft.icon,image/png&sort=score&order=desc&limit=20"
         try {
-            $resp = Invoke-RestMethod -Method Get -Uri $apiUrl -Headers $headers -ErrorAction Stop
+            $resp = Invoke-SteamGridDbApiCall -Uri $apiUrl -Headers $headers
         } catch {
             # Compatibility fallback for clients expecting raw API key without Bearer.
             try {
                 $headers = @{ Authorization = $ApiKey }
-                $resp = Invoke-RestMethod -Method Get -Uri $apiUrl -Headers $headers -ErrorAction Stop
+                $resp = Invoke-SteamGridDbApiCall -Uri $apiUrl -Headers $headers
             } catch {
                 $gameInfo = if ($GameName) { "$GameName (AppID $AppId)" } else { "AppID $AppId" }
                 Write-Host "  [SKIP]    SteamGridDB lookup failed for $gameInfo" -ForegroundColor DarkYellow
@@ -167,13 +208,20 @@ function Get-SteamIcoPath {
     }
 
     # Prefer the dedicated icon JPG (40-char sha1 filename)
-    $iconJpg = Get-ChildItem $cacheDir -Filter '*.jpg' -ErrorAction SilentlyContinue |
+    $iconJpg = Get-ChildItem $cacheDir -File -Include '*.jpg','*.png' -ErrorAction SilentlyContinue |
                 Where-Object { $_.BaseName -match '^[0-9a-f]{40}$' } |
                 Select-Object -First 1
 
-    # Fall back to header.jpg
+    # Fall back to header.<ext>
     if (-not $iconJpg) {
-        $iconJpg = Get-ChildItem $cacheDir -Filter 'header.jpg' -ErrorAction SilentlyContinue |
+        $iconJpg = Get-ChildItem $cacheDir -File -Include 'header.jpg','header.png' -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+    }
+
+    # Next fall back to any single image in the library cache folder
+    if (-not $iconJpg) {
+        $iconJpg = Get-ChildItem $cacheDir -File -Include '*.jpg','*.png' -ErrorAction SilentlyContinue |
+                   Sort-Object @{ Expression = { $_.BaseName -match 'logo|cover|header|client|icon' }; Descending = $true }, @{ Expression = { $_.Length }; Descending = $true } |
                    Select-Object -First 1
     }
 
@@ -223,14 +271,34 @@ function Get-CachedIcoPath {
 
 function Get-UwpIcoPath {
     # Returns a cached .ico for a UWP package logo, generating it if needed.
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$PackageFamilyName,
         [string]$InstallLocation,
         [string]$LogoRelPath,
         [string]$UwpIconCache
     )
+
     $logoSrc = Get-UwpLogoPath -InstallLocation $InstallLocation -LogoRelPath $LogoRelPath
+
+    # Fallback: search for a name containing a known icon keyword when manifest-specified logo path is missing.
+    if (-not $logoSrc -and $InstallLocation -and (Test-Path $InstallLocation)) {
+        try {
+            $logoCandidates = Get-ChildItem -Path $InstallLocation -Recurse -Include '*logo*.ico','*logo*.png','*logo*.jpg' -File -ErrorAction SilentlyContinue
+            if ($logoCandidates) {
+                $logoSrc = $logoCandidates |
+                    Sort-Object @{Expression = { $_.Name -match 'Square150x150|StoreLogo|Square44x44|Logo' }; Descending = $true }, @{Expression = { $_.Name.Length }; Descending = $true } |
+                    Select-Object -First 1
+                if ($logoSrc) { $logoSrc = $logoSrc.FullName }
+            }
+        } catch {
+            # Ignore file scan failures and continue gracefully.
+            $logoSrc = $null
+        }
+    }
+
     if (-not $logoSrc) { return $null }
+
     $cacheDir = Join-Path $UwpIconCache $PackageFamilyName
     $icoPath  = Join-Path $cacheDir 'icon.ico'
     if (Test-Path $icoPath) { return $icoPath }
@@ -244,47 +312,4 @@ function Get-UwpIcoPath {
         }
     }
     return $icoPath
-}
-
-function Find-GameIcon {
-    # Unified icon resolution strategy with priority chain.
-    # Priority: Custom > SteamGridDB official > SteamGridDB community > Cache > Local assets
-    param(
-        [string]$GameName,
-        [string]$AppId,
-        [string]$PlatformPrefix,  # 'steam', 'epic', 'xbox', 'msstore', etc.
-        [hashtable]$IconSources   # Custom callbacks for platform-specific logic
-    )
-    
-    # 1. Custom override (highest priority)
-    if ($IconSources.ContainsKey('Custom')) {
-        $ico = & $IconSources['Custom']
-        if ($ico) { return $ico }
-    }
-    
-    # 2. SteamGridDB official
-    if ($IconSources.ContainsKey('SteamGridDbOfficial')) {
-        $ico = & $IconSources['SteamGridDbOfficial']
-        if ($ico) { return $ico }
-    }
-    
-    # 3. SteamGridDB all styles
-    if ($IconSources.ContainsKey('SteamGridDbCommunity')) {
-        $ico = & $IconSources['SteamGridDbCommunity']
-        if ($ico) { return $ico }
-    }
-    
-    # 4. Cache
-    if ($IconSources.ContainsKey('Cached')) {
-        $ico = & $IconSources['Cached']
-        if ($ico) { return $ico }
-    }
-    
-    # 5. Local assets
-    if ($IconSources.ContainsKey('LocalAssets')) {
-        $ico = & $IconSources['LocalAssets']
-        if ($ico) { return $ico }
-    }
-    
-    return $null
 }
