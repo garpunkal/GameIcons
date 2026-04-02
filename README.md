@@ -7,6 +7,7 @@ Supports:
 - **Epic Games** — reads the launcher manifest folder
 - **Xbox Game Pass** — enumerates installed AppX packages via Xbox Live / `ms-xbl-*` capability detection
 - **Microsoft Store** — enumerates installed AppX packages via gaming capability detection, with an opt-in list for games that declare no standard gaming capabilities
+- **Ubisoft Connect** — reads game manifests from the Ubisoft Game Launcher data folder
 
 ---
 
@@ -21,19 +22,19 @@ Supports:
 ## Usage
 
 ```powershell
-.\Update-GameIcons.ps1
+.\Sync-GameShortcuts.ps1
 ```
 
 You can also run it explicitly with PowerShell 7:
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File .\Update-GameIcons.ps1
+pwsh -ExecutionPolicy Bypass -File .\Sync-GameShortcuts.ps1
 ```
 
 Put all generated shortcuts into a dedicated Games Start Menu folder:
 
 ```powershell
-.\Update-GameIcons.ps1 -UseGamesFolderForAll
+.\Sync-GameShortcuts.ps1 -UseGamesFolderForAll
 ```
 
 This defaults to:
@@ -45,13 +46,13 @@ This defaults to:
 Choose a custom final destination folder:
 
 ```powershell
-.\Update-GameIcons.ps1 -UseGamesFolderForAll -GamesMenu "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\My Games"
+.\Sync-GameShortcuts.ps1 -UseGamesFolderForAll -GamesMenu "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\My Games"
 ```
 
 Legacy mode (puts non-Steam shortcuts in Steam folder):
 
 ```powershell
-.\Update-GameIcons.ps1 -UseSteamFolderForAll
+.\Sync-GameShortcuts.ps1 -UseSteamFolderForAll
 ```
 
 If both switches are provided, `-UseGamesFolderForAll` takes precedence.
@@ -59,20 +60,20 @@ If both switches are provided, `-UseGamesFolderForAll` takes precedence.
 Preview changes without writing anything:
 
 ```powershell
-.\Update-GameIcons.ps1 -WhatIf
+.\Sync-GameShortcuts.ps1 -WhatIf
 ```
 
 Use SteamGridDB for Steam icon downloads (falls back to local Steam artwork when needed):
 
 ```powershell
-.\Update-GameIcons.ps1 -UseSteamGridDb -SteamGridDbApiKey '<your-api-key>'
+.\Sync-GameShortcuts.ps1 -UseSteamGridDb -SteamGridDbApiKey '<your-api-key>'
 ```
 
 Or set the API key once via environment variable:
 
 ```powershell
 $env:STEAMGRIDDB_API_KEY = '<your-api-key>'
-.\Update-GameIcons.ps1 -UseSteamGridDb
+.\Sync-GameShortcuts.ps1 -UseSteamGridDb
 ```
 
 To persist it for future terminals and logins (recommended):
@@ -93,13 +94,13 @@ STEAMGRIDDB_API_KEY=<your-api-key>
 To have the script persist the resolved key to your User environment:
 
 ```powershell
-.\Update-GameIcons.ps1 -UseSteamGridDb -PersistSteamGridDbApiKey
+.\Sync-GameShortcuts.ps1 -UseSteamGridDb -PersistSteamGridDbApiKey
 ```
 
 Force refresh of cached SteamGridDB icons:
 
 ```powershell
-.\Update-GameIcons.ps1 -UseSteamGridDb -RefreshSteamGridDb
+.\Sync-GameShortcuts.ps1 -UseSteamGridDb -RefreshSteamGridDb
 ```
 
 By default, the script triggers a Windows icon cache refresh and then restarts
@@ -108,13 +109,13 @@ Explorer at the end.
 Disable both steps if needed:
 
 ```powershell
-.\Update-GameIcons.ps1 -SkipIconCacheRefresh
+.\Sync-GameShortcuts.ps1 -SkipIconCacheRefresh
 ```
 
 Disable only the Explorer restart while keeping icon cache refresh:
 
 ```powershell
-.\Update-GameIcons.ps1 -SkipExplorerRestart
+.\Sync-GameShortcuts.ps1 -SkipExplorerRestart
 ```
 
 ### Parameters
@@ -123,13 +124,14 @@ Disable only the Explorer restart while keeping icon cache refresh:
 |---|---|---|
 | `SteamInstall` | `C:\Program Files (x86)\Steam` | Path to your Steam installation |
 | `SteamMenu` | `%APPDATA%\...\Programs\Steam` | Start Menu folder for Steam shortcuts |
-| `UseGamesFolderForAll` | `False` | Routes Steam/Epic/Xbox/Microsoft Store shortcuts into the folder set by `GamesMenu` |
+| `UseGamesFolderForAll` | `False` | Routes Steam/Epic/Xbox/Microsoft Store/Ubisoft Connect shortcuts into the folder set by `GamesMenu` |
 | `GamesMenu` | `%APPDATA%\...\Programs\Games` | Final destination folder used when `UseGamesFolderForAll` is enabled |
-| `UseSteamFolderForAll` | `False` | Legacy: routes Epic/Xbox/Microsoft Store shortcuts into the same folder as `SteamMenu` |
+| `UseSteamFolderForAll` | `False` | Legacy: routes Epic/Xbox/Microsoft Store/Ubisoft Connect shortcuts into the same folder as `SteamMenu` |
 | `EpicMenu` | `%APPDATA%\...\Programs\Epic Games` | Start Menu folder for Epic shortcuts |
 | `EpicManifests` | `C:\ProgramData\Epic\...\Manifests` | Path to Epic launcher manifests |
 | `XboxMenu` | `%APPDATA%\...\Programs\Xbox` | Start Menu folder for Xbox shortcuts |
 | `MsStoreMenu` | `%APPDATA%\...\Programs\Microsoft Store` | Start Menu folder for Store game shortcuts |
+| `UbisoftMenu` | `%APPDATA%\...\Programs\Games` | Start Menu folder for Ubisoft Connect shortcuts |
 | `UwpIconCache` | `.\UwpIconCache` | Folder where extracted UWP logos are cached as `.ico` files |
 | `IncludeStorePackages` | `@()` | Package name patterns to force-include in the MS Store section (see below) |
 | `SettingsPath` | `.\config\settings.json` | JSON file with exclusion lists, publisher prefixes, and other configuration |
@@ -181,7 +183,7 @@ To force-include them, add their package `Name` to the `includeStorePackages` ar
 You can also pass them directly via the `-IncludeStorePackages` parameter:
 
 ```powershell
-.\Update-GameIcons.ps1 -IncludeStorePackages 'TrivialTechnology.UltimateRummy500'
+.\Sync-GameShortcuts.ps1 -IncludeStorePackages 'TrivialTechnology.UltimateRummy500'
 ```
 
 To find a package name for an installed Store app:
@@ -189,6 +191,23 @@ To find a package name for an installed Store app:
 ```powershell
 Get-AppxPackage | Where-Object { $_.Name -match 'keyword' } | Select-Object Name, PackageFamilyName
 ```
+
+---
+
+## Ubisoft Connect Support
+
+The script automatically detects Ubisoft Connect installations and reads game manifests from:
+
+```text
+%LOCALAPPDATA%\Ubisoft Game Launcher\games
+```
+
+It parses `game.json` and `installation.json` files to extract game metadata and creates `uplay://launch/{game_id}` URL shortcuts.
+
+Ubisoft Connect games use the same icon resolution priority as other platforms:
+1. Custom icons from `CustomIcons/` folder
+2. SteamGridDB icons (when `-UseSteamGridDb` is enabled)
+3. Ubisoft launcher executable icon as fallback
 
 ---
 

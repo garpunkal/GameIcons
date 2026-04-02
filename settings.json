@@ -1,5 +1,5 @@
 {
-  "_comment": "Configuration for Update-GameIcons.ps1. Edit values below to customise game detection and exclusions.",
+  "_comment": "Configuration for Sync-GameShortcuts.ps1. Edit values below to customise game detection and exclusions.",
   "steamNonGameIds": [
     "228980",
     "1070560",
