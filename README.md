@@ -4,6 +4,17 @@ GameIcons is a PowerShell script that builds and maintains a single Windows Star
 
 It detects installed games, creates missing shortcuts, repairs broken icon links, migrates legacy shortcut names, and removes stale shortcuts for uninstalled titles.
 
+## Screenshots
+
+### Script Output
+
+![GameIcons script output](Screenshots/output.png)
+
+
+### Start Menu Icons
+
+![GameIcons Start Menu icons](Screenshots/icons.png)
+
 ## What It Supports
 
 Launchers and stores currently handled by the script:
