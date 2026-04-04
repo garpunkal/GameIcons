@@ -6,10 +6,15 @@ A robust PowerShell script that automatically syncs your installed game librarie
 - **Xbox Game Pass** — enumerates installed AppX packages via Xbox Live / `ms-xbl-*` capability detection
 - **Microsoft Store** — enumerates installed AppX packages via gaming capability detection, with an opt-in list for games that declare no standard gaming capabilities
 - **Ubisoft Connect** — reads game manifests from the Ubisoft Game Launcher data folder
+- **Battle.net** — discovers installed Blizzard titles from uninstall registry entries
+- **GOG** — discovers installed GOG games from uninstall registry entries
+- **itch.io** — scans the itch apps library for launchable executables
+- **EA App** — discovers installed EA titles from uninstall registry entries
+- **Rockstar** — discovers installed Rockstar titles from uninstall registry entries
 
 ## ✨ Features
 
-- **Multi-Platform Support**: Syncs games from Steam, Epic Games, Xbox Game Pass, Microsoft Store, and Ubisoft Connect
+- **Multi-Platform Support**: Syncs games from Steam, Epic Games, Xbox Game Pass, Microsoft Store, Ubisoft Connect, Battle.net, GOG, itch.io, EA App, and Rockstar
 - **Intelligent Icon Resolution**: Priority-based icon lookup (Custom → SteamGridDB → Local assets → Fallback)
 - **Progress Tracking**: Visual progress bars for long-running operations
 - **Robust Error Handling**: Retry logic for network operations, graceful failure recovery
@@ -54,6 +59,11 @@ Example `settings.json`:
   "paths": {
     "steamInstall": "C:\\Program Files (x86)\\Steam",
     "ubisoftInstall": "S:\\ubisoft",
+    "battleNetInstall": "C:\\Program Files (x86)\\Battle.net",
+    "gogInstall": "D:\\GOG Galaxy\\Games",
+    "itchInstall": "%APPDATA%\\itch\\apps",
+    "eaAppInstall": "C:\\Program Files\\EA Games",
+    "rockstarInstall": "C:\\Program Files\\Rockstar Games",
     "gamesMenu": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Games"
   }
 }
@@ -216,6 +226,56 @@ Ubisoft Connect games use the following icon resolution priority:
 
 Ubisoft shortcuts are created only for entries that have a valid Ubisoft game id.
 
+## Battle.net Support
+
+Battle.net games are detected from Windows uninstall registry entries for Blizzard and Activision titles.
+
+Battle.net shortcuts are created as `.lnk` files pointing to each game's local executable, with icon resolution priority:
+1. Custom icons from `CustomIcons/` folder
+2. Game executable icon as fallback
+
+If your games are installed in a non-default location, set `paths.battleNetInstall` in `settings.json`.
+
+## GOG Support
+
+GOG games are detected from Windows uninstall registry entries and filtered to game entries (excluding Galaxy launcher/update components).
+
+GOG shortcuts are created as `.lnk` files pointing to each game's local executable, with icon resolution priority:
+1. Custom icons from `CustomIcons/` folder
+2. Game executable icon as fallback
+
+If your games are installed in a non-default location, set `paths.gogInstall` in `settings.json`.
+
+## itch.io Support
+
+itch.io games are discovered by scanning the itch apps folder (default: `%APPDATA%\itch\apps`) for launchable `.exe` files.
+
+itch.io shortcuts are created as `.lnk` files with icon resolution priority:
+1. Custom icons from `CustomIcons/` folder
+2. Game executable icon as fallback
+
+If your itch library is in a custom location, set `paths.itchInstall` in `settings.json`.
+
+## EA App Support
+
+EA App games are detected from Windows uninstall registry entries and filtered to game entries (excluding launcher/installer components).
+
+EA App shortcuts are created as `.lnk` files with icon resolution priority:
+1. Custom icons from `CustomIcons/` folder
+2. Game executable icon as fallback
+
+If your EA library is in a custom location, set `paths.eaAppInstall` in `settings.json`.
+
+## Rockstar Support
+
+Rockstar games are detected from Windows uninstall registry entries and filtered to game entries (excluding launcher/Social Club components).
+
+Rockstar shortcuts are created as `.lnk` files with icon resolution priority:
+1. Custom icons from `CustomIcons/` folder
+2. Game executable icon as fallback
+
+If your Rockstar library is in a custom location, set `paths.rockstarInstall` in `settings.json`.
+
 ---
 
 ## Output
@@ -265,6 +325,26 @@ Each game is reported with one of these statuses:
 **Ubisoft Connect not detected:**
 - Ensure Ubisoft Connect is installed
 - Check that games are installed through Ubisoft Connect
+
+**Battle.net games not detected:**
+- Ensure games are installed through Battle.net and appear in Apps & Features
+- Set `paths.battleNetInstall` if your Blizzard games are on a custom drive
+
+**GOG games not detected:**
+- Ensure games are installed and visible in Apps & Features
+- Set `paths.gogInstall` if your GOG library is on a custom drive
+
+**itch.io games not detected:**
+- Ensure games are installed through the itch desktop app
+- Set `paths.itchInstall` if your itch apps library is on a custom drive
+
+**EA App games not detected:**
+- Ensure games are installed and visible in Apps & Features
+- Set `paths.eaAppInstall` if your EA library is on a custom drive
+
+**Rockstar games not detected:**
+- Ensure games are installed and visible in Apps & Features
+- Set `paths.rockstarInstall` if your Rockstar library is on a custom drive
 
 ### Getting Help
 

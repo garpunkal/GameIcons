@@ -67,6 +67,21 @@ if ($global:Settings.paths) {
     if ($global:Settings.paths.ubisoftInstall) {
         $UbisoftInstall = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.ubisoftInstall)
     }
+    if ($global:Settings.paths.battleNetInstall) {
+        $BattleNetInstall = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.battleNetInstall)
+    }
+    if ($global:Settings.paths.gogInstall) {
+        $GogInstall = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.gogInstall)
+    }
+    if ($global:Settings.paths.itchInstall) {
+        $ItchInstall = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.itchInstall)
+    }
+    if ($global:Settings.paths.eaAppInstall) {
+        $EaAppInstall = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.eaAppInstall)
+    }
+    if ($global:Settings.paths.rockstarInstall) {
+        $RockstarInstall = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.rockstarInstall)
+    }
     if ($global:Settings.paths.gamesMenu -and -not $PSBoundParameters.ContainsKey('GamesMenu')) {
         $GamesMenu = [Environment]::ExpandEnvironmentVariables($global:Settings.paths.gamesMenu)
     }
@@ -99,6 +114,11 @@ $EpicMenu     = $GamesMenu
 $XboxMenu     = $GamesMenu
 $MsStoreMenu  = $GamesMenu
 $UbisoftMenu  = $GamesMenu
+$BattleNetMenu = $GamesMenu
+$GogMenu      = $GamesMenu
+$ItchMenu     = $GamesMenu
+$EaAppMenu    = $GamesMenu
+$RockstarMenu = $GamesMenu
 
 $global:SteamNonGameIds                    = $global:Settings.steamNonGameIds
 $global:UwpServicePackageNames             = $global:Settings.uwpServicePackageNames

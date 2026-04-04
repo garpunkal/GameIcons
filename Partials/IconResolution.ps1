@@ -237,6 +237,109 @@ function Get-SteamIcoPath {
     return $icoPath
 }
 
+function Get-SteamCdnIcoPath {
+    # Downloads Steam CDN artwork for the app and converts it to ICO.
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [string]$AppId,
+        [string]$SafeName,
+        [string]$CachePath,
+        [switch]$Refresh
+    )
+
+    if (-not $AppId -or -not $SafeName -or -not $CachePath) {
+        return $null
+    }
+
+    if (-not (Test-Path $CachePath)) {
+        if ($PSCmdlet.ShouldProcess($CachePath, 'Create Steam icon cache directory')) {
+            New-Item -ItemType Directory -Path $CachePath | Out-Null
+        }
+    }
+
+    $icoPath = Join-Path $CachePath "$SafeName.steamcdn.ico"
+    if ((-not $Refresh) -and (Test-Path $icoPath)) {
+        return $icoPath
+    }
+
+    $tmpPath = Join-Path $CachePath "$SafeName.steamcdn.download.jpg"
+    $candidateUrls = @(
+        "https://cdn.cloudflare.steamstatic.com/steam/apps/$AppId/library_600x900_2x.jpg",
+        "https://cdn.cloudflare.steamstatic.com/steam/apps/$AppId/library_600x900.jpg",
+        "https://cdn.cloudflare.steamstatic.com/steam/apps/$AppId/library_capsule.jpg",
+        "https://cdn.cloudflare.steamstatic.com/steam/apps/$AppId/header.jpg",
+        "https://cdn.cloudflare.steamstatic.com/steam/apps/$AppId/capsule_231x87.jpg"
+    )
+
+    foreach ($url in $candidateUrls) {
+        try {
+            if ($PSCmdlet.ShouldProcess($tmpPath, 'Download Steam CDN artwork')) {
+                Invoke-WebRequest -Uri $url -OutFile $tmpPath -UseBasicParsing -ErrorAction Stop
+            }
+
+            if (Test-Path $tmpPath) {
+                if ($PSCmdlet.ShouldProcess($icoPath, 'Convert Steam CDN artwork to ICO')) {
+                    ConvertImageToIco -SourcePath $tmpPath -DestPath $icoPath
+                }
+                if (Test-Path $icoPath) {
+                    return $icoPath
+                }
+            }
+        } catch {
+            # Try next candidate URL.
+        } finally {
+            if (Test-Path $tmpPath) {
+                if ($PSCmdlet.ShouldProcess($tmpPath, 'Remove temporary Steam CDN asset')) {
+                    Remove-Item -LiteralPath $tmpPath -Force
+                }
+            }
+        }
+    }
+
+    # Some demos/apps do not expose legacy CDN paths, but appdetails still
+    # provides valid store_item_assets image URLs.
+    try {
+        $appDetails = Invoke-RestMethod -Uri "https://store.steampowered.com/api/appdetails?appids=$AppId&l=english" -ErrorAction Stop
+        $entry = $appDetails.$AppId
+        if ($entry -and $entry.success -and $entry.data) {
+            $storeUrls = @(
+                $entry.data.header_image,
+                $entry.data.capsule_image,
+                $entry.data.capsule_imagev5
+            ) | Where-Object { $_ } | Select-Object -Unique
+
+            foreach ($storeUrl in $storeUrls) {
+                try {
+                    if ($PSCmdlet.ShouldProcess($tmpPath, 'Download Steam Store artwork')) {
+                        Invoke-WebRequest -Uri $storeUrl -OutFile $tmpPath -UseBasicParsing -ErrorAction Stop
+                    }
+
+                    if (Test-Path $tmpPath) {
+                        if ($PSCmdlet.ShouldProcess($icoPath, 'Convert Steam Store artwork to ICO')) {
+                            ConvertImageToIco -SourcePath $tmpPath -DestPath $icoPath
+                        }
+                        if (Test-Path $icoPath) {
+                            return $icoPath
+                        }
+                    }
+                } catch {
+                    # Try next store-provided URL.
+                } finally {
+                    if (Test-Path $tmpPath) {
+                        if ($PSCmdlet.ShouldProcess($tmpPath, 'Remove temporary Steam Store asset')) {
+                            Remove-Item -LiteralPath $tmpPath -Force
+                        }
+                    }
+                }
+            }
+        }
+    } catch {
+        # Ignore store metadata errors and continue to later fallbacks.
+    }
+
+    return $null
+}
+
 function Get-CachedIcoPath {
     # Looks for a previously generated/downloaded icon in cache folders.
     # SteamGridDbCache is checked first, then UwpIconCache.

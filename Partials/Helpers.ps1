@@ -286,6 +286,7 @@ function Get-SteamAppManifests {
                 AppId          = $appId
                 Name           = $name
                 ClientIconHash = $clientIcon
+                InstallPath    = $fullInstallDir
                 Library        = $lib
             }
         }

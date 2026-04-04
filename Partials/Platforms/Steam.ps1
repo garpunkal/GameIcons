@@ -1,6 +1,46 @@
 # Steam platform operations
 
+function Get-SteamNativeExeIconSource {
+    param([string]$InstallPath)
+
+    if (-not $InstallPath -or -not (Test-Path $InstallPath)) {
+        return $null
+    }
+
+    $searchRoots = @(
+        $InstallPath,
+        (Join-Path $InstallPath 'Binaries'),
+        (Join-Path $InstallPath 'Bin'),
+        (Join-Path $InstallPath 'x64'),
+        (Join-Path $InstallPath 'Win64')
+    ) | Select-Object -Unique
+
+    $exeCandidates = @()
+    foreach ($root in $searchRoots) {
+        if (Test-Path $root) {
+            $exeCandidates += Get-ChildItem -Path $root -Filter '*.exe' -File -ErrorAction SilentlyContinue
+        }
+    }
+
+    # Some titles keep their launch exe deeper than one level.
+    if (-not $exeCandidates -or $exeCandidates.Count -eq 0) {
+        $exeCandidates = @(Get-ChildItem -Path $InstallPath -Filter '*.exe' -File -Recurse -ErrorAction SilentlyContinue)
+    }
+
+    $best = $exeCandidates |
+        Where-Object { $_.Name -notmatch '(?i)unins|uninstall|setup|config|crash|launcher|updater|redist|prereq' } |
+        Sort-Object Length -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+
+    if ($best -and (Test-Path $best)) {
+        return $best
+    }
+
+    return $null
+}
+
 function Sync-SteamGames {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [string]$SteamInstall,
         [string]$SteamMenu,
@@ -101,13 +141,23 @@ function Sync-SteamGames {
             $icoPath = Get-SteamIcoPath -AppId $game.AppId -SteamInstall $SteamInstall -ClientIconHash $game.ClientIconHash
         }
 
+        # 5. Official Steam CDN artwork (no API key required)
+        if (-not $icoPath) {
+            $icoPath = Get-SteamCdnIcoPath -AppId $game.AppId -SafeName $steamIconCacheKey -CachePath $SteamGridDbCache -Refresh:$RefreshSteamGridDb
+        }
+
+        # 6. Native game executable icon (final fallback)
+        if (-not $icoPath) {
+            $icoPath = Get-SteamNativeExeIconSource -InstallPath $game.InstallPath
+        }
+
         if (-not (Test-Path $shortcutPath)) {
             # Create missing shortcut
             if ($icoPath) {
                 Write-Host "  [CREATE]  $($game.Name)" -ForegroundColor Green
                 Write-UrlFile -Path $shortcutPath -Url $url -IconFile $icoPath
             } else {
-                Write-Host "  [SKIP]    $($game.Name) (AppID $($game.AppId)) - no icon found in SteamGridDB, caches, or Steam local assets" -ForegroundColor DarkYellow
+                Write-Host "  [SKIP]    $($game.Name) (AppID $($game.AppId)) - no icon found in SteamGridDB, caches, Steam local assets, Steam CDN, or native executable" -ForegroundColor DarkYellow
             }
         } else {
             # Shortcut exists: check icon is still valid

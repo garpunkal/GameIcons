@@ -4,7 +4,7 @@
 
 .DESCRIPTION
         Detects installed games from Steam, Epic Games, Xbox Game Pass,
-        Microsoft Store, and Ubisoft Connect. Creates or repairs shortcuts and
+    Microsoft Store, Ubisoft Connect, Battle.net, GOG, itch.io, EA App, and Rockstar. Creates or repairs shortcuts and
         icons in one destination folder. Advanced behavior is configured via
         settings.json.
 
@@ -39,6 +39,11 @@ param(
 $SteamInstall            = 'C:\Program Files (x86)\Steam'
 $EpicManifests           = 'C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests'
 $UbisoftInstall          = ''
+$BattleNetInstall        = ''
+$GogInstall              = ''
+$ItchInstall             = ''
+$EaAppInstall            = ''
+$RockstarInstall         = ''
 $UwpIconCache            = (Join-Path $PSScriptRoot 'UwpIconCache')
 $IncludeStorePackages    = @()
 $SettingsPath            = (Join-Path $PSScriptRoot 'settings.json')
@@ -67,7 +72,12 @@ $partialFiles = @(
     'Platforms\EpicGames.ps1',
     'Platforms\Xbox.ps1',
     'Platforms\MicrosoftStore.ps1',
-    'Platforms\Ubisoft.ps1'
+    'Platforms\Ubisoft.ps1',
+    'Platforms\BattleNet.ps1',
+    'Platforms\GoG.ps1',
+    'Platforms\ItchIo.ps1',
+    'Platforms\EaApp.ps1',
+    'Platforms\Rockstar.ps1'
 )
 
 foreach ($file in $partialFiles) {
@@ -104,6 +114,26 @@ Sync-MicrosoftStoreGames -MsStoreMenu $MsStoreMenu `
 # Sync Ubisoft Connect Games
 Sync-UbisoftGames -UbisoftMenu $UbisoftMenu `
     -UbisoftInstall $UbisoftInstall -CustomIconsPath $CustomIconsPath
+
+# Sync Battle.net Games
+Sync-BattleNetGames -BattleNetMenu $BattleNetMenu `
+    -BattleNetInstall $BattleNetInstall -CustomIconsPath $CustomIconsPath
+
+# Sync GOG Games
+Sync-GoGGames -GogMenu $GogMenu `
+    -GogInstall $GogInstall -CustomIconsPath $CustomIconsPath
+
+# Sync itch.io Games
+Sync-ItchIoGames -ItchMenu $ItchMenu `
+    -ItchInstall $ItchInstall -CustomIconsPath $CustomIconsPath
+
+# Sync EA App Games
+Sync-EaAppGames -EaAppMenu $EaAppMenu `
+    -EaAppInstall $EaAppInstall -CustomIconsPath $CustomIconsPath
+
+# Sync Rockstar Games
+Sync-RockstarGames -RockstarMenu $RockstarMenu `
+    -RockstarInstall $RockstarInstall -CustomIconsPath $CustomIconsPath
 
 if (-not $SkipIconCacheRefresh) {
     try {
