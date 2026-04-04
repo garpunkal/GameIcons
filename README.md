@@ -8,7 +8,8 @@ It detects installed games, creates missing shortcuts, repairs broken icon links
 
 ### Script Output
 
-![GameIcons script output](Screenshots/output.png)
+![GameIcons script output 1](Screenshots/output1.png)
+![GameIcons script output 2](Screenshots/output2.png)
 
 
 ### Start Menu Icons
