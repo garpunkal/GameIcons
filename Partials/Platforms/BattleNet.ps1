@@ -70,6 +70,7 @@ function Get-BattleNetShortcutInfo {
 
         return [PSCustomObject]@{
             TargetPath  = [string]$shortcut.TargetPath
+            Arguments   = [string]$shortcut.Arguments
             Description = [string]$shortcut.Description
             IconPath    = [string]$iconPath
         }
@@ -81,6 +82,19 @@ function Get-BattleNetShortcutInfo {
             [System.Runtime.InteropServices.Marshal]::ReleaseComObject($ws) | Out-Null
         }
     }
+}
+
+function Get-BattleNetProductCode {
+    param([string]$DisplayName)
+    $map = $global:BattleNetProductCodes
+    if (-not $map -or $map.Count -eq 0) { return '' }
+    $lower = $DisplayName.ToLowerInvariant()
+    foreach ($key in $map.Keys) {
+        if ($lower -eq $key -or $lower -like "*$key*") {
+            return $map[$key]
+        }
+    }
+    return ''
 }
 
 function Get-BattleNetGameList {
@@ -168,11 +182,26 @@ function Get-BattleNetGameList {
                 }
             }
 
+            # Look for a game-specific Launcher.exe in the install root.
+            $launcherExePath = ''
+            if ($installLocation -and (Test-Path $installLocation)) {
+                $launcherCandidate = Get-ChildItem -Path $installLocation -Filter '*Launcher.exe' -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -notmatch '(?i)battle\.net|agent|updater' } |
+                    Select-Object -First 1
+                if ($launcherCandidate) {
+                    $launcherExePath = $launcherCandidate.FullName
+                }
+            }
+
+            $productCode = Get-BattleNetProductCode -DisplayName $displayName
+
             $seen[$safeName] = $true
             $games += [PSCustomObject]@{
-                DisplayName = $displayName
-                ExePath     = $exePath
-                InstallPath = $installLocation
+                DisplayName     = $displayName
+                ExePath         = $exePath
+                InstallPath     = $installLocation
+                LauncherExePath = $launcherExePath
+                ProductCode     = $productCode
             }
         }
     }
@@ -252,12 +281,15 @@ function Sync-BattleNetGames {
         $customIco = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
         $iconFile = if ($customIco) { $customIco } else { $game.ExePath }
 
+        $desiredTarget = if ($game.LauncherExePath -and (Test-Path $game.LauncherExePath)) { $game.LauncherExePath } else { $game.ExePath }
+        $desiredArgs   = if ($game.ProductCode) { "--productcode=$($game.ProductCode)" } else { '' }
+
         if (-not (Test-Path $shortcutPath)) {
-            if (Test-Path $game.ExePath) {
+            if (Test-Path $desiredTarget) {
                 Write-Host "  [CREATE]  $($game.DisplayName)" -ForegroundColor Green
-                Write-LnkShortcut -Path $shortcutPath -Target $game.ExePath -Arguments '' -IconFile $iconFile -Description $battleNetDescription
+                Write-LnkShortcut -Path $shortcutPath -Target $desiredTarget -Arguments $desiredArgs -IconFile $iconFile -Description $battleNetDescription
             } else {
-                Write-Host "  [SKIP]    $($game.DisplayName) - executable not found: $($game.ExePath)" -ForegroundColor DarkYellow
+                Write-Host "  [SKIP]    $($game.DisplayName) - executable not found: $desiredTarget" -ForegroundColor DarkYellow
             }
             continue
         }
@@ -267,16 +299,17 @@ function Sync-BattleNetGames {
         $currentIcon = $shortcutInfo.IconPath
 
         $needsFix = -not $currentTarget -or -not (Test-Path $currentTarget) -or
-                    ($currentTarget -ne $game.ExePath) -or
+                    ($currentTarget -ne $desiredTarget) -or
+                    ($shortcutInfo.Arguments -ne $desiredArgs) -or
                     -not $currentIcon -or -not (Test-Path $currentIcon) -or
                     ($customIco -and $currentIcon -ne $customIco) -or
                     ($shortcutInfo.Description -ne $battleNetDescription)
 
         if (-not $needsFix) {
             Write-Host "  [OK]      $($game.DisplayName)" -ForegroundColor DarkGray
-        } elseif (Test-Path $game.ExePath) {
+        } elseif (Test-Path $desiredTarget) {
             Write-Host "  [FIX]     $($game.DisplayName)" -ForegroundColor Yellow
-            Write-LnkShortcut -Path $shortcutPath -Target $game.ExePath -Arguments '' -IconFile $iconFile -Description $battleNetDescription
+            Write-LnkShortcut -Path $shortcutPath -Target $desiredTarget -Arguments $desiredArgs -IconFile $iconFile -Description $battleNetDescription
         } else {
             Write-Host "  [REMOVE]  $($game.DisplayName) - broken shortcut target not found" -ForegroundColor Red
             Remove-Item -LiteralPath $shortcutPath -Force

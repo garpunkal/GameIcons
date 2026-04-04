@@ -125,3 +125,4 @@ $global:UwpServicePackageNames             = $global:Settings.uwpServicePackageN
 $global:MsPublisherPrefixes                = $global:Settings.msPublisherPrefixes
 $global:SteamGridDbExcludedIconIdsByAppId  = $global:Settings.SteamGridDbExcludedIconIds
 $global:SteamGridDbPreferredIconIdsByAppId = $global:Settings.SteamGridDbPreferredIconIds
+$global:BattleNetProductCodes              = $global:Settings.battleNetProductCodes

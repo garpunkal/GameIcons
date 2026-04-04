@@ -59,13 +59,14 @@ function Get-Settings {
     # Reads the consolidated JSON settings file.
     param([string]$Path)
     $defaults = @{
-        steamNonGameIds           = @()
-        uwpServicePackageNames    = @()
-        msPublisherPrefixes       = @()
-        steamGridDbExcludedIconIds = @{}
+        steamNonGameIds             = @()
+        uwpServicePackageNames      = @()
+        msPublisherPrefixes         = @()
+        steamGridDbExcludedIconIds  = @{}
         steamGridDbPreferredIconIds = @{}
-        includeStorePackages      = @()
-        paths                     = $null
+        battleNetProductCodes       = [ordered]@{}
+        includeStorePackages        = @()
+        paths                       = $null
     }
     if (-not $Path -or -not (Test-Path $Path)) {
         return $defaults
@@ -95,6 +96,16 @@ function Get-Settings {
             $map[$prop.Name] = @($prop.Value | ForEach-Object { [string]$_ })
         }
         $defaults['steamGridDbExcludedIconIds'] = $map
+    }
+    # Map: battleNetProductCodes -> hashtable of displayName (lowercase) -> string productCode
+    if ($json.PSObject.Properties['battleNetProductCodes']) {
+        $map = [ordered]@{}
+        $obj = $json.battleNetProductCodes
+        foreach ($prop in $obj.PSObject.Properties) {
+            if ($prop.Name -eq '_comment') { continue }
+            $map[$prop.Name] = [string]$prop.Value
+        }
+        $defaults['battleNetProductCodes'] = $map
     }
     # Map: steamGridDbPreferredIconIds -> hashtable of appId -> string iconId
     if ($json.PSObject.Properties['steamGridDbPreferredIconIds']) {
