@@ -1,197 +1,136 @@
 # GameIcons
 
-A robust PowerShell script that automatically syncs your installed game libraries across multiple launchers to Start Menu shortcuts. Features intelligent icon resolution, progress tracking, and comprehensive error handling.
-- **Steam** — reads all library folders and installed game manifests
-- **Epic Games** — reads the launcher manifest folder
-- **Xbox Game Pass** — enumerates installed AppX packages via Xbox Live / `ms-xbl-*` capability detection
-- **Microsoft Store** — enumerates installed AppX packages via gaming capability detection, with an opt-in list for games that declare no standard gaming capabilities
-- **Ubisoft Connect** — reads game manifests from the Ubisoft Game Launcher data folder
-- **Battle.net** — discovers installed Blizzard titles from uninstall registry entries
-- **GOG** — discovers installed GOG games from uninstall registry entries
-- **itch.io** — scans the itch apps library for launchable executables
-- **EA App** — discovers installed EA titles from uninstall registry entries
-- **Rockstar** — discovers installed Rockstar titles from uninstall registry entries
+GameIcons is a PowerShell script that builds and maintains a single Windows Start Menu Games folder from the launchers you already use.
 
-## ✨ Features
+It detects installed games, creates missing shortcuts, repairs broken icon links, migrates legacy shortcut names, and removes stale shortcuts for uninstalled titles.
 
-- **Multi-Platform Support**: Syncs games from Steam, Epic Games, Xbox Game Pass, Microsoft Store, Ubisoft Connect, Battle.net, GOG, itch.io, EA App, and Rockstar
-- **Intelligent Icon Resolution**: Priority-based icon lookup (Custom → SteamGridDB → Local assets → Fallback)
-- **Progress Tracking**: Visual progress bars for long-running operations
-- **Robust Error Handling**: Retry logic for network operations, graceful failure recovery
-- **WhatIf Support**: Preview changes before execution
-- **Custom Icon Overrides**: Drop custom icons to override auto-detected ones
+## What It Supports
 
----
+Launchers and stores currently handled by the script:
+
+| Platform | Detection Source | Shortcut Type |
+|---|---|---|
+| Steam | Steam library manifests across all Steam library folders | .url |
+| Epic Games | Epic launcher .item manifests | .url |
+| Xbox Game Pass | Installed AppX packages with Xbox Live indicators | .lnk |
+| Microsoft Store | Installed AppX packages with game capabilities, plus include list | .lnk |
+| Ubisoft Connect | Launcher metadata, existing shortcuts, install folders, registry fallback | .url |
+| Battle.net | Windows uninstall registry entries | .lnk |
+| GOG | Windows uninstall registry entries | .lnk |
+| itch.io | Scans itch apps library for launchable executables | .lnk |
+| EA App | Windows uninstall registry entries | .lnk |
+| Rockstar | Windows uninstall registry entries | .lnk |
+
+## Features
+
+- Unified output folder for all supported platforms.
+- Automatic cleanup for shortcuts that no longer match installed games.
+- Legacy shortcut migration from underscore naming to spaced naming.
+- Icon repair flow for shortcuts that point to missing or outdated icon files.
+- Custom icon overrides per game.
+- Steam icon enrichment with SteamGridDB and local caching.
+- WhatIf support through standard PowerShell ShouldProcess behavior.
 
 ## Requirements
 
-- Windows 10 / 11
-- PowerShell 5.1 or later
-- No external modules required
+- Windows 10 or Windows 11.
+- PowerShell 5.1 or newer.
+- No external PowerShell modules required.
 
-## � Quick Start
+## Quick Start
 
-1. Download `Sync.ps1` and place it in a folder
-2. **Optional**: Edit `settings.json` to customize paths for game installations and Start Menu folders
-3. Open PowerShell as Administrator
-4. Navigate to the script folder
-5. Run: `.\Sync.ps1 -WhatIf` (preview mode)
-6. Run: `.\Sync.ps1` (to create shortcuts)
-
-For Steam icons, get an API key from [SteamGridDB](https://www.steamgriddb.com) and set it in your environment:
-```powershell
-$env:STEAMGRIDDB_API_KEY = 'your-api-key-here'
-.\Sync.ps1
-```
-
-### Configuration
-
-The script can be configured via `settings.json`:
-
-- **Game Paths**: Set custom paths for game installations (e.g., `"ubisoftInstall": "S:\\ubisoft"`)
-- **Menu Path**: Set a single destination folder via `gamesMenu`
-- **Cache Paths**: Configure where icons and cache files are stored
-- **Exclusions**: Define games to skip or custom icon preferences
-
-Example `settings.json`:
-```json
-{
-  "paths": {
-    "steamInstall": "C:\\Program Files (x86)\\Steam",
-    "ubisoftInstall": "S:\\ubisoft",
-    "battleNetInstall": "C:\\Program Files (x86)\\Battle.net",
-    "gogInstall": "D:\\GOG Galaxy\\Games",
-    "itchInstall": "%APPDATA%\\itch\\apps",
-    "eaAppInstall": "C:\\Program Files\\EA Games",
-    "rockstarInstall": "C:\\Program Files\\Rockstar Games",
-    "gamesMenu": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Games"
-  }
-}
-```
-
-## 🏗️ Architecture
-
-The script uses a modular architecture with separate files for different concerns:
-
-- `Sync.ps1` - Main orchestrator script
-- `Partials/Helpers.ps1` - Utility functions for parsing, names, and discovery
-- `Partials/IconResolution.ps1` - Icon downloading and caching logic
-- `Partials/ShortcutOperations.ps1` - Shortcut creation and management
-- `Partials/Settings.ps1` - Configuration loading and menu path setup
-- `Partials/Platforms/` - Platform-specific game detection logic
-
----
-
-## Usage
-
-```powershell
-.\Sync.ps1
-```
-
-You can also run it explicitly with PowerShell 7:
-
-```powershell
-pwsh -ExecutionPolicy Bypass -File .\Sync.ps1
-```
-
-All generated shortcuts are written to a dedicated Games Start Menu folder:
-
-```powershell
-.\Sync.ps1
-```
-
-This defaults to:
-
-```text
-%APPDATA%\Microsoft\Windows\Start Menu\Programs\Games
-```
-
-Choose a custom final destination folder:
-
-```powershell
-.\Sync.ps1 -GamesMenu "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\My Games"
-```
-
-Preview changes without writing anything:
+1. Clone or download this repository.
+2. Open PowerShell in the repository root.
+3. Optional dry run:
 
 ```powershell
 .\Sync.ps1 -WhatIf
 ```
 
-SteamGridDB support is enabled by default. Set the API key once via environment variable:
+4. Run for real:
 
 ```powershell
-$env:STEAMGRIDDB_API_KEY = '<your-api-key>'
 .\Sync.ps1
 ```
 
-To persist it for future terminals and logins (recommended):
+By default, shortcuts are written to:
 
-```powershell
-setx STEAMGRIDDB_API_KEY "<your-api-key>"
+```text
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Games
 ```
 
-Then open a new terminal before running the script again.
+## Script Parameters
 
-If a `.env` file exists next to the script with `STEAMGRIDDB_API_KEY=...`,
-the script auto-loads it when no environment key is set.
-
-```dotenv
-STEAMGRIDDB_API_KEY=<your-api-key>
-```
-
-Advanced SteamGridDB/cache behavior can be controlled through `settings.json`.
-
-By default, the script triggers a Windows icon cache refresh and then restarts
-Explorer at the end.
-
-Disable both steps if needed:
-
-```powershell
-.\Sync.ps1 -SkipIconCacheRefresh
-```
-
-Disable only the Explorer restart while keeping icon cache refresh:
-
-```powershell
-.\Sync.ps1 -SkipExplorerRestart
-```
-
-### Parameters
+Sync.ps1 intentionally keeps the CLI surface small:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `GamesMenu` | `%APPDATA%\...\Programs\Games` | Single destination folder for all generated shortcuts |
-| `SkipIconCacheRefresh` | `False` | Skips the final Windows icon cache refresh step |
-| `SkipExplorerRestart` | `False` | Skips restarting Explorer after icon cache refresh |
+| GamesMenu | %APPDATA%\Microsoft\Windows\Start Menu\Programs\Games | Destination folder for all generated shortcuts |
+| SkipIconCacheRefresh | False | Skips final shell icon cache refresh |
+| SkipExplorerRestart | False | Skips Explorer restart after cache refresh |
 
-Most advanced behavior (launcher paths, include lists, cache paths, icon settings) is configured in `settings.json`.
+Examples:
 
----
-
-## Custom Icon Overrides
-
-Drop a `<GameName>.ico` or `<GameName>.png` into the `CustomIcons/` folder to override the auto-detected icon for any game.
-
-The filename must match the game's name with invalid filename characters removed (the same sanitisation the script uses for shortcut filenames). For example:
-
-```
-CustomIcons/
-  Halo The Master Chief Collection.ico
-  Balatro.png
+```powershell
+.\Sync.ps1 -GamesMenu "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\My Games"
+.\Sync.ps1 -SkipIconCacheRefresh
+.\Sync.ps1 -SkipExplorerRestart
 ```
 
-Free high-quality icons can be downloaded from [SteamGridDB](https://www.steamgriddb.com) (use the **Icons** tab and choose ICO or PNG format).
+## Configuration
 
-When both a custom icon and SteamGridDB are available, `CustomIcons` takes priority.
+Most behavior is controlled from settings.json.
 
----
+### Paths
 
-## Including Store Games Without Gaming Capabilities
+The paths object supports:
 
-Some Microsoft Store games don't declare any gaming capabilities in their manifest (e.g. games built with certain Unity or web-based frameworks). These won't be auto-detected by the Store section.
+- steamInstall
+- epicManifests
+- ubisoftInstall
+- battleNetInstall
+- gogInstall
+- itchInstall
+- eaAppInstall
+- rockstarInstall
+- gamesMenu
+- uwpIconCache
+- steamGridDbCache
+- customIconsPath
 
-To force-include them, add their package `Name` to the `includeStorePackages` array in `settings.json`. Wildcards are supported.
+Example:
+
+```json
+{
+  "paths": {
+    "steamInstall": "C:\\Program Files (x86)\\Steam",
+    "epicManifests": "C:\\ProgramData\\Epic\\EpicGamesLauncher\\Data\\Manifests",
+    "gamesMenu": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Games",
+    "uwpIconCache": "UwpIconCache",
+    "steamGridDbCache": "SteamGridDbCache",
+    "customIconsPath": "CustomIcons"
+  }
+}
+```
+
+Notes:
+
+- Environment variables in settings are expanded.
+- Relative cache/icon paths are resolved from the repository root.
+- The GamesMenu parameter takes precedence over settings.json.
+
+### Store and UWP Filtering
+
+settings.json also supports:
+
+- steamNonGameIds
+- uwpServicePackageNames
+- msPublisherPrefixes
+- includeStorePackages
+
+includeStorePackages is useful for Store games that do not declare standard gaming capabilities.
+
+Example:
 
 ```json
 {
@@ -202,158 +141,170 @@ To force-include them, add their package `Name` to the `includeStorePackages` ar
 }
 ```
 
-To find a package name for an installed Store app:
+### SteamGridDB Icon Preferences
+
+You can pin or exclude SteamGridDB icon IDs:
+
+- steamGridDbPreferredIconIds
+- steamGridDbExcludedIconIds
+
+Keys can be app IDs or game names.
+
+Example:
+
+```json
+{
+  "steamGridDbPreferredIconIds": {
+    "1091500": "86095",
+    "Cyberpunk 2077": "86095"
+  },
+  "steamGridDbExcludedIconIds": {
+    "1091500": ["11111", "22222"]
+  }
+}
+```
+
+## SteamGridDB API Key Setup
+
+SteamGridDB is enabled by default, but a key is optional.
+
+Resolution order used by the script:
+
+1. Current process environment variable STEAMGRIDDB_API_KEY.
+2. User environment scope.
+3. Machine environment scope.
+4. Local .env file in repo root.
+
+Set for the current terminal session:
 
 ```powershell
-Get-AppxPackage | Where-Object { $_.Name -match 'keyword' } | Select-Object Name, PackageFamilyName
+$env:STEAMGRIDDB_API_KEY = "your-api-key"
+.\Sync.ps1
 ```
 
----
+Persist for future terminals:
 
-## Ubisoft Connect Support
+```powershell
+setx STEAMGRIDDB_API_KEY "your-api-key"
+```
 
-The script automatically detects Ubisoft Connect installations and reads game manifests from:
+Or use a local .env file:
+
+```dotenv
+STEAMGRIDDB_API_KEY=your-api-key
+```
+
+Security notes:
+
+- Keep .env local and never commit real keys.
+- .env.example is intended for placeholders only.
+- .gitignore already excludes .env.
+
+## Icon Resolution Priority
+
+### Steam
+
+Priority chain:
+
+1. CustomIcons override.
+2. SteamGridDB official style.
+3. SteamGridDB official and custom styles.
+4. Previously cached icon assets.
+5. Local Steam client icon or library cache artwork.
+6. Steam CDN artwork fallback.
+7. Native game executable icon fallback.
+
+### Epic, Xbox, Microsoft Store
+
+1. CustomIcons override.
+2. SteamGridDB preferred entry when configured by game name.
+3. Platform-native icon source.
+
+### Ubisoft, Battle.net, GOG, itch.io, EA App, Rockstar
+
+1. CustomIcons override.
+2. Game executable icon.
+
+## Custom Icon Overrides
+
+Place .ico or .png files in CustomIcons with a filename matching the sanitized game name.
+
+Examples:
 
 ```text
-%LOCALAPPDATA%\Ubisoft Game Launcher\games
+CustomIcons/
+  Halo The Master Chief Collection.ico
+  Balatro.png
 ```
 
-It parses `game.json` and `installation.json` files to extract game metadata and creates `uplay://launch/{game_id}` URL shortcuts.
+When a matching PNG exists, it is converted to ICO automatically.
 
-Ubisoft Connect games use the following icon resolution priority:
-1. Custom icons from `CustomIcons/` folder
-2. Ubisoft game executable icon as fallback
+## Output Statuses
 
-Ubisoft shortcuts are created only for entries that have a valid Ubisoft game id.
-
-## Battle.net Support
-
-Battle.net games are detected from Windows uninstall registry entries for Blizzard and Activision titles.
-
-Battle.net shortcuts are created as `.lnk` files pointing to each game's local executable, with icon resolution priority:
-1. Custom icons from `CustomIcons/` folder
-2. Game executable icon as fallback
-
-If your games are installed in a non-default location, set `paths.battleNetInstall` in `settings.json`.
-
-## GOG Support
-
-GOG games are detected from Windows uninstall registry entries and filtered to game entries (excluding Galaxy launcher/update components).
-
-GOG shortcuts are created as `.lnk` files pointing to each game's local executable, with icon resolution priority:
-1. Custom icons from `CustomIcons/` folder
-2. Game executable icon as fallback
-
-If your games are installed in a non-default location, set `paths.gogInstall` in `settings.json`.
-
-## itch.io Support
-
-itch.io games are discovered by scanning the itch apps folder (default: `%APPDATA%\itch\apps`) for launchable `.exe` files.
-
-itch.io shortcuts are created as `.lnk` files with icon resolution priority:
-1. Custom icons from `CustomIcons/` folder
-2. Game executable icon as fallback
-
-If your itch library is in a custom location, set `paths.itchInstall` in `settings.json`.
-
-## EA App Support
-
-EA App games are detected from Windows uninstall registry entries and filtered to game entries (excluding launcher/installer components).
-
-EA App shortcuts are created as `.lnk` files with icon resolution priority:
-1. Custom icons from `CustomIcons/` folder
-2. Game executable icon as fallback
-
-If your EA library is in a custom location, set `paths.eaAppInstall` in `settings.json`.
-
-## Rockstar Support
-
-Rockstar games are detected from Windows uninstall registry entries and filtered to game entries (excluding launcher/Social Club components).
-
-Rockstar shortcuts are created as `.lnk` files with icon resolution priority:
-1. Custom icons from `CustomIcons/` folder
-2. Game executable icon as fallback
-
-If your Rockstar library is in a custom location, set `paths.rockstarInstall` in `settings.json`.
-
----
-
-## Output
-
-Each game is reported with one of these statuses:
+The script reports one of these states per game:
 
 | Status | Meaning |
 |---|---|
-| `[CREATE]` | Shortcut did not exist — created |
-| `[OK]` | Shortcut exists with a valid icon |
-| `[FIX]` | Shortcut existed but had a broken or outdated icon path — fixed |
-| `[REMOVE]` | Shortcut exists for a game no longer installed — removed |
-| `[SKIP]` | Could not create/fix — no icon source or executable found |
+| [CREATE] | Shortcut did not exist and was created |
+| [OK] | Shortcut and icon are valid |
+| [FIX] | Shortcut existed but target/icon/details were repaired |
+| [REMOVE] | Shortcut removed because game is missing or unrecoverable |
+| [SKIP] | Game could not be processed (missing source, icon, or executable) |
+| [MIGRATE] | Legacy shortcut naming moved to current naming |
+| [WARN] | Non-fatal warning |
 
----
-
-## Generated Files
+## Generated Caches
 
 | Path | Purpose |
 |---|---|
-| `UwpIconCache/` | Cached `.ico` files extracted from UWP package assets. Safe to delete — regenerated on next run. |
-| `SteamGridDbCache/` | Cached SteamGridDB icon assets. Safe to delete — regenerated on next run. |
-| `CustomIcons/` | Your custom icon overrides. Not touched by the script. |
-| `settings.json` | Consolidated settings: exclusion lists, publisher prefixes, SGDB icon exclusions, and Store package overrides. |
+| UwpIconCache | Cached ICO files from UWP package assets |
+| SteamGridDbCache | Cached SteamGridDB and Steam CDN icon assets |
 
-## 🐛 Troubleshooting
+Both are safe to delete and will be regenerated as needed.
 
-### Common Issues
+## Project Layout
 
-**"Access denied" or permission errors:**
-- Run PowerShell as Administrator
-- Ensure the script directory is writable
+| Path | Role |
+|---|---|
+| Sync.ps1 | Entry point and orchestration |
+| settings.json | Main configuration |
+| Partials/Helpers.ps1 | Shared helpers and settings parsing |
+| Partials/IconResolution.ps1 | SteamGridDB, image conversion, cache helpers |
+| Partials/ShortcutOperations.ps1 | URL and LNK read/write helpers |
+| Partials/Settings.ps1 | Runtime settings initialization and path resolution |
+| Partials/Platforms | Per-platform detection and sync logic |
+| CustomIcons | Optional manual icon overrides |
 
-**Steam games not detected:**
-- Verify `paths.steamInstall` in `settings.json`
-- Check that Steam is installed and has games
+## Troubleshooting
 
-**Icons not downloading:**
-- Verify SteamGridDB API key is correct
-- Check internet connection
-- Clear `SteamGridDbCache/` to force a re-download
+### No games found for a launcher
 
-**Script runs slowly:**
-- First run downloads icons and may take time
-- Subsequent runs are faster due to caching
+- Verify the launcher is installed and has at least one installed game.
+- Check corresponding paths in settings.json.
+- For Store titles with unusual manifests, add package names to includeStorePackages.
 
-**Ubisoft Connect not detected:**
-- Ensure Ubisoft Connect is installed
-- Check that games are installed through Ubisoft Connect
+### Icons look stale after run
 
-**Battle.net games not detected:**
-- Ensure games are installed through Battle.net and appear in Apps & Features
-- Set `paths.battleNetInstall` if your Blizzard games are on a custom drive
+- Run without SkipIconCacheRefresh so shell cache refresh executes.
+- If needed, allow Explorer restart by omitting SkipExplorerRestart.
 
-**GOG games not detected:**
-- Ensure games are installed and visible in Apps & Features
-- Set `paths.gogInstall` if your GOG library is on a custom drive
+### SteamGridDB lookups fail
 
-**itch.io games not detected:**
-- Ensure games are installed through the itch desktop app
-- Set `paths.itchInstall` if your itch apps library is on a custom drive
+- Confirm STEAMGRIDDB_API_KEY is set correctly.
+- Confirm network access to steamgriddb.com.
+- Retry later if rate limited.
 
-**EA App games not detected:**
-- Ensure games are installed and visible in Apps & Features
-- Set `paths.eaAppInstall` if your EA library is on a custom drive
+### Wrong game icon selected
 
-**Rockstar games not detected:**
-- Ensure games are installed and visible in Apps & Features
-- Set `paths.rockstarInstall` if your Rockstar library is on a custom drive
+- Add a custom icon in CustomIcons.
+- Or pin a specific SteamGridDB ID in steamGridDbPreferredIconIds.
 
-### Getting Help
+## Safe Operations and Secrets
 
-- Use `-WhatIf` to preview changes without making them
-- Check the output for `[ERROR]`, `[WARN]`, or `[SKIP]` messages
-- Review `settings.json` for configuration issues
-
----
+- Keep secrets in environment variables or local .env only.
+- Do not store real API keys in settings.json.
+- Before pushing, review staged files with git diff --staged.
 
 ## License
 
-[MIT](LICENSE)
+This project is licensed under the MIT License. See LICENSE for details.
