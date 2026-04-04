@@ -104,6 +104,31 @@ function Sync-MicrosoftStoreGames {
         }
 
         Get-ChildItem $MsStoreMenu -Filter '*.lnk' | ForEach-Object {
+            # Only clean up UWP/AppX shortcuts owned by Store/Xbox sync.
+            # This avoids removing launcher-native shortcuts (Battle.net, GOG, etc.)
+            # that may live in the same unified Games folder.
+            $ws = $null
+            $shortcut = $null
+            $isAppsFolderShortcut = $false
+            try {
+                $ws = New-Object -ComObject WScript.Shell
+                $shortcut = $ws.CreateShortcut($_.FullName)
+                $targetPath = [string]$shortcut.TargetPath
+                $arguments = [string]$shortcut.Arguments
+                $isAppsFolderShortcut =
+                    $targetPath -match '(?i)\\explorer.exe$' -and
+                    $arguments -match '^(?i)shell:AppsFolder\\'
+            } finally {
+                if ($shortcut) {
+                    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut) | Out-Null
+                }
+                if ($ws) {
+                    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($ws) | Out-Null
+                }
+            }
+
+            if (-not $isAppsFolderShortcut) { return }
+
             if ($installedSharedNames -notcontains $_.BaseName) {
                 Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
                 if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
