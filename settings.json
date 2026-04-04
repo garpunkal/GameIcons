@@ -24,6 +24,7 @@
   "uwpServicePackageNames": [
     "Microsoft.GamingApp",
     "Microsoft.GamingServices",
+    "Microsoft.MicrosoftSolitaireCollection",
     "Microsoft.XboxIdentityProvider",
     "Microsoft.XboxSpeechToTextOverlay",
     "Microsoft.XboxGameCallableUI",
