@@ -111,8 +111,6 @@ function Sync-EpicGames {
             if (Test-Path $game.ExePath) {
                 Write-Host "  [CREATE]  $($game.DisplayName)" -ForegroundColor Green
                 Write-UrlFile -Path $shortcutPath -Url $game.LaunchUrl -IconFile $iconFile -WorkingDir $game.WorkingDir
-            } else {
-                Write-Host "  [SKIP]    $($game.DisplayName) - exe not found at: $($game.ExePath)" -ForegroundColor DarkYellow
             }
         } else {
             # Shortcut exists: check icon is still valid

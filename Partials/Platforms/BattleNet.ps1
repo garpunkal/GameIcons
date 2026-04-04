@@ -69,10 +69,11 @@ function Get-BattleNetShortcutInfo {
         $iconPath = if ($shortcut.IconLocation) { ($shortcut.IconLocation -split ',')[0].Trim() } else { '' }
 
         return [PSCustomObject]@{
-            TargetPath  = [string]$shortcut.TargetPath
-            Arguments   = [string]$shortcut.Arguments
-            Description = [string]$shortcut.Description
-            IconPath    = [string]$iconPath
+            TargetPath      = [string]$shortcut.TargetPath
+            Arguments       = [string]$shortcut.Arguments
+            Description     = [string]$shortcut.Description
+            IconPath        = [string]$iconPath
+            WorkingDirectory = [string]$shortcut.WorkingDirectory
         }
     } finally {
         if ($shortcut) {
@@ -245,17 +246,24 @@ function Sync-BattleNetGames {
         New-Item -ItemType Directory -Path $BattleNetMenu | Out-Null
     }
 
-    $battleNetDescription = 'Battle.net Game'
     $installedBattleNetNames = $games | ForEach-Object { Get-SafeFilename -Name $_.DisplayName }
     $installedBattleNetNamesLegacy = $installedBattleNetNames | ForEach-Object { $_ -replace ' ', '_' }
     $installedBattleNetNamesCombined = @($installedBattleNetNames + $installedBattleNetNamesLegacy) | Select-Object -Unique
+    $battleNetDescription = 'Battle.net Game'
+
+    $plannedBnLnkPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($g in $games) {
+        $sn = Get-SafeFilename -Name $g.DisplayName
+        $plannedBnLnkPaths.Add((Join-Path $BattleNetMenu "$sn.lnk")) | Out-Null
+    }
 
     if (Test-Path $BattleNetMenu) {
         Get-ChildItem $BattleNetMenu -Filter '*.lnk' | ForEach-Object {
-            $shortcutInfo = Get-BattleNetShortcutInfo -Path $_.FullName
-            if ($shortcutInfo.Description -ne $battleNetDescription) { return }
+            $info = Get-BattleNetShortcutInfo -Path $_.FullName
+            if ($info.Description -ne $battleNetDescription) { return }
 
-            if ($installedBattleNetNamesCombined -notcontains $_.BaseName) {
+            if ($installedBattleNetNamesCombined -notcontains $_.BaseName -and
+                -not $plannedBnLnkPaths.Contains($_.FullName)) {
                 Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
                 Remove-Item -LiteralPath $_.FullName -Force
             }
@@ -274,7 +282,6 @@ function Sync-BattleNetGames {
         }
 
         if ((Test-Path $shortcutPath) -and (Test-Path $legacyShortcutPath) -and ($legacyShortcutPath -ne $shortcutPath)) {
-            Write-Host "  [REMOVE] Duplicate legacy shortcut $legacySafeName.lnk" -ForegroundColor Red
             Remove-Item -LiteralPath $legacyShortcutPath -Force
         }
 
@@ -283,11 +290,13 @@ function Sync-BattleNetGames {
 
         $desiredTarget = if ($game.LauncherExePath -and (Test-Path $game.LauncherExePath)) { $game.LauncherExePath } else { $game.ExePath }
         $desiredArgs   = if ($game.ProductCode) { "--productcode=$($game.ProductCode)" } else { '' }
+        $desiredComment = $battleNetDescription
+        $desiredWorkingDir = if ($game.InstallPath -and (Test-Path $game.InstallPath)) { $game.InstallPath } else { Split-Path $game.ExePath -Parent }
 
         if (-not (Test-Path $shortcutPath)) {
             if (Test-Path $desiredTarget) {
                 Write-Host "  [CREATE]  $($game.DisplayName)" -ForegroundColor Green
-                Write-LnkShortcut -Path $shortcutPath -Target $desiredTarget -Arguments $desiredArgs -IconFile $iconFile -Description $battleNetDescription
+                Write-LnkShortcut -Path $shortcutPath -Target $desiredTarget -Arguments $desiredArgs -IconFile $iconFile -Description $desiredComment -WorkingDirectory $desiredWorkingDir
             } else {
                 Write-Host "  [SKIP]    $($game.DisplayName) - executable not found: $desiredTarget" -ForegroundColor DarkYellow
             }
@@ -297,19 +306,21 @@ function Sync-BattleNetGames {
         $shortcutInfo = Get-BattleNetShortcutInfo -Path $shortcutPath
         $currentTarget = $shortcutInfo.TargetPath
         $currentIcon = $shortcutInfo.IconPath
+        $currentWorkingDir = $shortcutInfo.WorkingDirectory
 
         $needsFix = -not $currentTarget -or -not (Test-Path $currentTarget) -or
                     ($currentTarget -ne $desiredTarget) -or
                     ($shortcutInfo.Arguments -ne $desiredArgs) -or
                     -not $currentIcon -or -not (Test-Path $currentIcon) -or
                     ($customIco -and $currentIcon -ne $customIco) -or
-                    ($shortcutInfo.Description -ne $battleNetDescription)
+                ($shortcutInfo.Description -ne $desiredComment) -or
+                ($currentWorkingDir -ne $desiredWorkingDir)
 
         if (-not $needsFix) {
             Write-Host "  [OK]      $($game.DisplayName)" -ForegroundColor DarkGray
         } elseif (Test-Path $desiredTarget) {
             Write-Host "  [FIX]     $($game.DisplayName)" -ForegroundColor Yellow
-            Write-LnkShortcut -Path $shortcutPath -Target $desiredTarget -Arguments $desiredArgs -IconFile $iconFile -Description $battleNetDescription
+            Write-LnkShortcut -Path $shortcutPath -Target $desiredTarget -Arguments $desiredArgs -IconFile $iconFile -Description $desiredComment -WorkingDirectory $desiredWorkingDir
         } else {
             Write-Host "  [REMOVE]  $($game.DisplayName) - broken shortcut target not found" -ForegroundColor Red
             Remove-Item -LiteralPath $shortcutPath -Force

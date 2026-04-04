@@ -32,7 +32,8 @@
     "Microsoft.XboxGameBar",
     "Microsoft.XboxTCUI",
     "Microsoft.Xbox.TCUI",
-    "Microsoft.StorePurchaseApp"
+    "Microsoft.StorePurchaseApp",
+    "MicrosoftWindows.Client.WebExperience"
   ],
   "msPublisherPrefixes": [
     "CN=Microsoft Corporation",
@@ -52,7 +53,7 @@
     "diablo immortal": "ANBS",
     "hearthstone": "WTCG",
     "heroes of the storm": "Hero",
-    "overwatch 2": "Pro",
+    "overwatch": "pro",
     "starcraft remastered": "S1",
     "starcraft ii": "S2",
     "warcraft": "W1",

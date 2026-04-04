@@ -61,11 +61,11 @@ function Sync-MicrosoftStoreGames {
                 $raw = if (Test-Path $manifestPath) { Get-Content $manifestPath -Raw -ErrorAction SilentlyContinue } else { '' }
                 $displayName = $null
                 if ($raw -match '<DisplayName>([^<]+)</DisplayName>') {
-                    $dn = $matches[1].Trim()
+                    $dn = ConvertFrom-XmlEntity $matches[1].Trim()
                     if ($dn -notmatch '^ms-resource:') { $displayName = $dn }
                 }
                 if (-not $displayName -and $raw -match 'DisplayName="([^"]+)"') {
-                    $dn = $matches[1].Trim()
+                    $dn = ConvertFrom-XmlEntity $matches[1].Trim()
                     if ($dn -notmatch '^ms-resource:') { $displayName = $dn }
                 }
                 if (-not $displayName) { $displayName = $pkg.Name }
@@ -97,10 +97,34 @@ function Sync-MicrosoftStoreGames {
     $installedStoreNamesCombined = @($installedStoreNames + $installedStoreNamesLegacy) | Select-Object -Unique
 
     if (Test-Path $MsStoreMenu) {
+        # Pre-compute shortcut paths the game loop will create so the cleanup
+        # loop never removes a file that is about to be recreated under the same path.
+        $plannedStoreLnkPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($g in $storeGames) {
+            $sn = Get-SafeFilename -Name $g.DisplayName
+            $plannedStoreLnkPaths.Add((Join-Path $MsStoreMenu "$sn.lnk")) | Out-Null
+        }
+
+        # When Xbox and Store share a folder, path-based protection prevents
+        # create->remove churn even when name matching differs.
+        $plannedXboxLnkPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
         # Shared Xbox+Store folder cleanup: keep anything installed in either list.
         $installedSharedNames = $installedStoreNamesCombined
         if ($MsStoreMenu -eq $XboxMenu) {
-            $installedSharedNames = @($installedStoreNamesCombined + $InstalledXboxNames) | Select-Object -Unique
+            # Recompute Xbox names from source of truth to avoid any stale/partial
+            # handoff arrays causing false removals in the shared folder.
+            $xboxSafeNames = @(Get-UwpGameList -XboxOnly | ForEach-Object { Get-SafeFilename -Name $_.DisplayName })
+            $xboxSafeNamesLegacy = $xboxSafeNames | ForEach-Object { $_ -replace ' ', '_' }
+            foreach ($sn in ($xboxSafeNames + $xboxSafeNamesLegacy | Select-Object -Unique)) {
+                $plannedXboxLnkPaths.Add((Join-Path $MsStoreMenu "$sn.lnk")) | Out-Null
+            }
+            $installedSharedNames = @(
+                $installedStoreNamesCombined +
+                $InstalledXboxNames +
+                $xboxSafeNames +
+                $xboxSafeNamesLegacy
+            ) | Select-Object -Unique
         }
 
         Get-ChildItem $MsStoreMenu -Filter '*.lnk' | ForEach-Object {
@@ -130,9 +154,12 @@ function Sync-MicrosoftStoreGames {
             if (-not $isAppsFolderShortcut) { return }
 
             if ($installedSharedNames -notcontains $_.BaseName) {
-                Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
-                if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
-                    Remove-Item -LiteralPath $_.FullName -Force
+                if (-not $plannedStoreLnkPaths.Contains($_.FullName) -and
+                    -not $plannedXboxLnkPaths.Contains($_.FullName)) {
+                    Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
+                    if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
+                        Remove-Item -LiteralPath $_.FullName -Force
+                    }
                 }
             }
         }
@@ -153,7 +180,6 @@ function Sync-MicrosoftStoreGames {
         }
 
         if ((Test-Path $shortcutPath) -and (Test-Path $legacyShortcutPath) -and ($legacyShortcutPath -ne $shortcutPath)) {
-            Write-Host "  [REMOVE] Duplicate legacy shortcut $legacySafeName.lnk" -ForegroundColor Red
             if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Remove duplicate shortcut')) {
                 Remove-Item -LiteralPath $legacyShortcutPath -Force
             }

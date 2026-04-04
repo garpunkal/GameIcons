@@ -51,7 +51,9 @@ function Get-SteamGridDbIcoPath {
         [switch]$Refresh,
         # Comma-separated SteamGridDB style filter (e.g. 'official' or 'official,custom').
         [string]$Styles = 'official,custom',
-        [string]$GameName = $null
+        [string]$GameName = $null,
+        # Suppress the [SKIP] message on failure (use for intermediate fallback calls).
+        [switch]$Quiet
     )
 
     $excludedIds = @()
@@ -118,8 +120,10 @@ function Get-SteamGridDbIcoPath {
                 $headers = @{ Authorization = $ApiKey }
                 $resp = Invoke-SteamGridDbApiCall -Uri $apiUrl -Headers $headers
             } catch {
-                $gameInfo = if ($GameName) { "$GameName (AppID $AppId)" } else { "AppID $AppId" }
-                Write-Host "  [SKIP]    SteamGridDB lookup failed for $gameInfo" -ForegroundColor DarkYellow
+                if (-not $Quiet) {
+                    $gameInfo = if ($GameName) { "$GameName (AppID $AppId)" } else { "AppID $AppId" }
+                    Write-Host "  [SKIP]    SteamGridDB lookup failed for $gameInfo" -ForegroundColor DarkYellow
+                }
                 return $null
             }
         }

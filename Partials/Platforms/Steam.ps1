@@ -122,7 +122,7 @@ function Sync-SteamGames {
             # 1. SteamGridDB official icons (original Steam assets hosted on SGDB)
             $icoPath = Get-SteamGridDbIcoPath -AppId $game.AppId -SafeName $steamIconCacheKey `
                        -ApiKey $SteamGridDbApiKey -CachePath $SteamGridDbCache `
-                       -Refresh:$RefreshSteamGridDb -Styles 'official' -GameName $game.Name
+                       -Refresh:$RefreshSteamGridDb -Styles 'official' -GameName $game.Name -Quiet
             # 2. SteamGridDB all styles sorted by score (community icons)
             if (-not $icoPath) {
                 $icoPath = Get-SteamGridDbIcoPath -AppId $game.AppId -SafeName $steamIconCacheKey `

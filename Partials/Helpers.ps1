@@ -47,6 +47,18 @@ function Get-CustomIcoPath {
     return $null
 }
 
+function ConvertFrom-XmlEntity {
+    # Decode common XML/HTML entities that appear verbatim in AppxManifest.xml files
+    # when read with Get-Content -Raw (plain text, not parsed XML).
+    param([string]$Text)
+    if (-not $Text) { return $Text }
+    $Text -replace '&amp;',  '&' `
+          -replace '&lt;',   '<' `
+          -replace '&gt;',   '>' `
+          -replace '&quot;', '"' `
+          -replace '&apos;', "'"
+}
+
 function Get-SafeFilename {
     # Remove characters that Windows does not allow in file names, but preserve spaces for human-readable Start Menu labels.
     param([string]$Name)
@@ -241,11 +253,11 @@ function Get-UwpGameList {
         # Display name: prefer Properties > VisualElements; skip ms-resource strings
         $displayName = $null
         if ($raw -match '<DisplayName>([^<]+)</DisplayName>') {
-            $dn = $matches[1].Trim()
+            $dn = ConvertFrom-XmlEntity $matches[1].Trim()
             if ($dn -notmatch '^ms-resource:') { $displayName = $dn }
         }
         if (-not $displayName -and $raw -match 'DisplayName="([^"]+)"') {
-            $dn = $matches[1].Trim()
+            $dn = ConvertFrom-XmlEntity $matches[1].Trim()
             if ($dn -notmatch '^ms-resource:') { $displayName = $dn }
         }
         if (-not $displayName) { $displayName = $pkg.Name }

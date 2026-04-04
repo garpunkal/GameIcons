@@ -48,7 +48,8 @@ function Write-LnkShortcut {
         [string]$Target,
         [string]$Arguments,
         [string]$IconFile,
-        [string]$Description = ''
+        [string]$Description = '',
+        [string]$WorkingDirectory = ''
     )
     try {
         if ($PSCmdlet.ShouldProcess($Path, 'Write shortcut')) {
@@ -58,6 +59,7 @@ function Write-LnkShortcut {
             $s  = $ws.CreateShortcut($Path)
             $s.TargetPath  = $Target
             $s.Arguments   = $Arguments
+            if ($WorkingDirectory) { $s.WorkingDirectory = $WorkingDirectory }
             if ($IconFile)    { $s.IconLocation = "$IconFile,0" }
             if ($Description) { $s.Description  = $Description }
             $s.Save()
