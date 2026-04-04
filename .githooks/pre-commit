@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "[pre-commit] gitleaks was not found in PATH. Install gitleaks to enable secret scanning." >&2
+  exit 1
+fi
+
+gitleaks protect --staged --config .gitleaks.toml --redact

@@ -1,0 +1,13 @@
+title = "GameIcons gitleaks config"
+
+[allowlist]
+description = "Allow placeholders and docs examples"
+regexes = [
+  '''your-api-key''',
+  '''<your-api-key>''',
+  '''YOUR_KEY_HERE'''
+]
+paths = [
+  '''README.md''',
+  '''.env.example'''
+]

@@ -37,6 +37,15 @@ Launchers and stores currently handled by the script:
 - PowerShell 5.1 or newer.
 - No external PowerShell modules required.
 
+## Known Limitations
+
+- Detection quality depends on each launcher's local metadata and uninstall registry entries.
+- Some portable or manually copied game installs may not be detected.
+- Microsoft Store and Xbox detection depends on AppX manifest capabilities, which are not always consistent.
+- Ubisoft detection can find inferred installs without launch IDs, and those are skipped when they cannot produce a valid launcher target.
+- Some launchers update executable paths after patches, so a run may need to repair shortcuts.
+- Icon cache behavior is controlled by Windows shell caching; icon updates may not appear until cache refresh/restart.
+
 ## Quick Start
 
 1. Clone or download this repository.
@@ -76,6 +85,37 @@ Examples:
 .\Sync.ps1 -SkipIconCacheRefresh
 .\Sync.ps1 -SkipExplorerRestart
 ```
+
+## Validation and Testing
+
+Use this checklist before opening a PR or cutting a release:
+
+1. Run a dry run and verify expected actions.
+
+```powershell
+.\Sync.ps1 -WhatIf
+```
+
+2. Run a full sync.
+
+```powershell
+.\Sync.ps1
+```
+
+3. Verify output quality:
+- Shortcuts are created in the target Games folder.
+- No unexpected removals are reported.
+- Icon paths resolve to valid files for representative games.
+
+4. Validate launcher coverage:
+- Confirm at least one title from each installed launcher updates correctly.
+
+5. Validate cache behavior:
+- Confirm UwpIconCache and SteamGridDbCache are created and reused.
+
+6. Validate shell refresh behavior:
+- Run once with default behavior.
+- Run once with SkipIconCacheRefresh and SkipExplorerRestart to confirm both toggles.
 
 ## Configuration
 
@@ -267,6 +307,7 @@ Both are safe to delete and will be regenerated as needed.
 | Path | Role |
 |---|---|
 | Sync.ps1 | Entry point and orchestration |
+| Setup-GitHooks.ps1 | One-command setup for repo hooks and gitleaks validation |
 | settings.json | Main configuration |
 | Partials/Helpers.ps1 | Shared helpers and settings parsing |
 | Partials/IconResolution.ps1 | SteamGridDB, image conversion, cache helpers |
@@ -304,6 +345,38 @@ Both are safe to delete and will be regenerated as needed.
 - Keep secrets in environment variables or local .env only.
 - Do not store real API keys in settings.json.
 - Before pushing, review staged files with git diff --staged.
+
+### Optional Pre-Commit Secret Scan (Recommended)
+
+This repository includes a gitleaks config and sample git hook under .githooks.
+
+Fast path (recommended):
+
+```powershell
+.\Setup-GitHooks.ps1
+```
+
+This script sets core.hooksPath and runs a staged gitleaks scan when available.
+
+1. Install gitleaks.
+
+```powershell
+winget install Gitleaks.Gitleaks
+```
+
+2. Enable repo hooks.
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+3. Test the scanner manually.
+
+```powershell
+gitleaks protect --staged --config .gitleaks.toml --redact
+```
+
+If a secret is detected, commit is blocked until the issue is fixed or intentionally allowlisted.
 
 ## License
 
