@@ -55,6 +55,21 @@ $PersistSteamGridDbApiKey = $false
 $SteamGridDbCache        = (Join-Path $PSScriptRoot 'SteamGridDbCache')
 $RefreshSteamGridDb      = $true
 
+# Per-platform shortcut destinations — default to the single GamesMenu folder.
+# Override individually via settings.json paths.
+$SteamMenu               = $GamesMenu
+$EpicMenu                = $GamesMenu
+$XboxMenu                = $GamesMenu
+$MsStoreMenu             = $GamesMenu
+$UbisoftMenu             = $GamesMenu
+$BattleNetMenu           = $GamesMenu
+$GogMenu                 = $GamesMenu
+$ItchMenu                = $GamesMenu
+$EaAppMenu               = $GamesMenu
+$RockstarMenu            = $GamesMenu
+$UseGamesFolderForAll    = $false
+$UseSteamFolderForAll    = $false
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 
