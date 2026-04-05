@@ -99,4 +99,4 @@ All paths, exclusions, and icon preferences are set in `settings.json` at the re
 
 ## License
 
-This project is licensed under the MIT License. See LICENSE for details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
