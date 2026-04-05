@@ -91,67 +91,11 @@ All paths, exclusions, and icon preferences are set in `settings.json` at the re
 - Some launchers change executable paths after updates — re-running the script will repair those shortcuts.
 - Icon changes may not be visible immediately due to Windows shell icon caching; a restart or cache refresh resolves this.
 
-## Troubleshooting
+## Further Reading
 
-### No games found for a launcher
-
-- Verify the launcher is installed and has at least one installed game.
-- Check corresponding paths in settings.json.
-- For Store titles with unusual manifests, add package names to includeStorePackages.
-
-### Icons look stale after run
-
-- Run without SkipIconCacheRefresh so shell cache refresh executes.
-- If needed, allow Explorer restart by omitting SkipExplorerRestart.
-
-### SteamGridDB lookups fail
-
-- Confirm STEAMGRIDDB_API_KEY is set correctly.
-- Confirm network access to steamgriddb.com.
-- Retry later if rate limited.
-
-### Wrong game icon selected
-
-- Add a custom icon in CustomIcons.
-- Or pin a specific SteamGridDB ID in steamGridDbPreferredIconIds.
-
-## Safe Operations and Secrets
-
-- Keep secrets in environment variables or local .env only.
-- Do not store real API keys in settings.json.
-- Before pushing, review staged files with git diff --staged.
-
-### Optional Pre-Commit Secret Scan (Recommended)
-
-This repository includes a gitleaks config and sample git hook under .githooks.
-
-Fast path (recommended):
-
-```powershell
-.\Setup-GitHooks.ps1
-```
-
-This script sets core.hooksPath and runs a staged gitleaks scan when available.
-
-1. Install gitleaks.
-
-```powershell
-winget install Gitleaks.Gitleaks
-```
-
-2. Enable repo hooks.
-
-```powershell
-git config core.hooksPath .githooks
-```
-
-3. Test the scanner manually.
-
-```powershell
-gitleaks protect --staged --config .gitleaks.toml --redact
-```
-
-If a secret is detected, commit is blocked until the issue is fixed or intentionally allowlisted.
+- [Configuration reference](docs/configuration.md)
+- [SteamGridDB integration](docs/steamgriddb.md)
+- [Troubleshooting & safe operations](docs/troubleshooting.md)
 
 ## License
 
