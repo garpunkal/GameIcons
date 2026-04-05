@@ -157,7 +157,8 @@ function Get-UbisoftGameList {
     # Method 3: Check Ubisoft installation directory for installed games
     foreach ($installDir in $ubisoftInstallDirs) {
         if (Test-Path $installDir) {
-            Get-ChildItem $installDir -Directory | Where-Object { $_.Name -ne 'cache' -and $_.Name -notmatch 'Ubisoft Game Launcher' } | ForEach-Object {
+            $ubisoftDataFolders = @('cache', 'crashes', 'data', 'license', 'locales', 'logs', 'savegames', 'shareplay', 'Ubisoft Game Launcher')
+            Get-ChildItem $installDir -Directory | Where-Object { $ubisoftDataFolders -notcontains $_.Name -and $_.Name -notmatch 'Ubisoft Game Launcher' } | ForEach-Object {
                 $gameDir = $_.FullName
                 $displayName = $_.Name
                 
@@ -262,7 +263,6 @@ function Sync-UbisoftGames {
     # Process each game
     foreach ($game in $games) {
         if (-not $game.GameId) {
-            Write-Host "  [SKIP]    $($game.DisplayName) - missing Ubisoft game id" -ForegroundColor DarkYellow
             continue
         }
 
