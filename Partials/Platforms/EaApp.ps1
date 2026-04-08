@@ -184,6 +184,7 @@ function Get-EaAppGameList {
 }
 
 function Sync-EaAppGames {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [string]$EaAppMenu,
         [string]$EaAppInstall,

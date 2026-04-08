@@ -1,6 +1,7 @@
 # Microsoft Store Games platform operations
 
 function Sync-MicrosoftStoreGames {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [string]$MsStoreMenu,
         [string]$LegacyMsStoreMenu = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Microsoft Store",

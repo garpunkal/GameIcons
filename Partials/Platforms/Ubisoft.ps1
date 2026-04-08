@@ -208,6 +208,7 @@ function Get-UbisoftGameList {
 }
 
 function Sync-UbisoftGames {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [string]$UbisoftMenu,
         [string]$UbisoftInstall,

@@ -93,6 +93,7 @@ function Get-ItchIoShortcutInfo {
 }
 
 function Sync-ItchIoGames {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [string]$ItchMenu,
         [string]$ItchInstall,

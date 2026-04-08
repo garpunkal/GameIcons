@@ -1,6 +1,7 @@
 # Xbox Game Pass platform operations
 
 function Sync-XboxGamePass {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [string]$XboxMenu,
         [string]$CustomIconsPath,

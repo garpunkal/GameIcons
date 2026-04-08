@@ -1,6 +1,7 @@
 # Epic Games platform operations
 
 function Sync-EpicGames {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [string]$EpicManifests,
         [string]$EpicMenu,
@@ -60,15 +61,16 @@ function Sync-EpicGames {
     $installedEpicNamesCombined = @($installedEpicNames + $installedEpicNamesLegacy) | Select-Object -Unique
 
     if (Test-Path $EpicMenu) {
-        # If Epic and Store share a folder, removal is handled once in the Store
-        # section against a combined installed set to avoid cross-deleting links.
-        if ($EpicMenu -ne $MsStoreMenu) {
-            Get-ChildItem $EpicMenu -Filter '*.url' | ForEach-Object {
-                if ($installedEpicNamesCombined -notcontains $_.BaseName) {
-                    Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
-                    if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
-                        Remove-Item -LiteralPath $_.FullName -Force
-                    }
+        Get-ChildItem $EpicMenu -Filter '*.url' | ForEach-Object {
+            # In shared folders, only clean up Epic-owned .url shortcuts.
+            $raw = [System.IO.File]::ReadAllText($_.FullName)
+            $isEpicShortcut = $raw -match '(?m)^URL=com\.epicgames\.launcher://apps/'
+            if (-not $isEpicShortcut) { return }
+
+            if ($installedEpicNamesCombined -notcontains $_.BaseName) {
+                Write-Host "  [REMOVE]  $($_.BaseName)" -ForegroundColor Red
+                if ($PSCmdlet.ShouldProcess($_.FullName, 'Remove uninstalled shortcut')) {
+                    Remove-Item -LiteralPath $_.FullName -Force
                 }
             }
         }

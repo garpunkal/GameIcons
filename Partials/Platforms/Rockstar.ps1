@@ -183,6 +183,7 @@ function Get-RockstarGameList {
 }
 
 function Sync-RockstarGames {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [string]$RockstarMenu,
         [string]$RockstarInstall,
