@@ -37,6 +37,11 @@ function Get-UbisoftGameList {
     # Enumerate Ubisoft Connect installed games
     # Try multiple detection methods: directory scanning, registry, existing shortcuts, and installation directory
     param([string]$PreferredLibraryRoot = '')
+
+    function Test-UbisoftInstalledPath {
+        param([string]$Path)
+        return ($Path -and (Test-Path -LiteralPath $Path))
+    }
     
     $games = @()
     
@@ -60,7 +65,7 @@ function Get-UbisoftGameList {
             Get-ChildItem $startMenuPath -Recurse -Include "*.url" -ErrorAction SilentlyContinue | ForEach-Object {
                 try {
                     $content = Get-Content $_.FullName -Raw
-                    if ($content -match '(?m)^URL=uplay://launch/(\d+)/') {
+                    if ($content -match '(?m)^URL=uplay://launch/(\d+)(?:/|\b)') {
                         $gameId = $matches[1]
                         $displayName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
                         
@@ -83,7 +88,7 @@ function Get-UbisoftGameList {
                         }
                         
                         # Check if we already have this game
-                        if (-not ($games | Where-Object { $_.GameId -eq $gameId })) {
+                        if ($installPath -and -not ($games | Where-Object { $_.GameId -eq $gameId })) {
                             $games += [PSCustomObject]@{
                                 DisplayName    = $displayName
                                 GameId         = $gameId
@@ -130,8 +135,15 @@ function Get-UbisoftGameList {
                             $gameId = $manifest.external_id -or $manifest.game_id -or $manifest.id -or $manifest.uplay_id -or $_.Name
                             $displayName = $manifest.game_name -or $manifest.name -or $manifest.display_name -or $_.Name
                             $executablePath = $manifest.installed_path -or $manifest.install_path -or $manifest.executable -or $null
+                            $installPathCandidate = $manifest.installed_path -or $manifest.install_path -or $null
+
+                            if (-not (Test-UbisoftInstalledPath -Path $installPathCandidate) -and $executablePath) {
+                                if (Test-Path -LiteralPath $executablePath) {
+                                    $installPathCandidate = Split-Path -Parent $executablePath
+                                }
+                            }
                             
-                            if ($displayName -and $gameId) {
+                            if ($displayName -and $gameId -and (Test-UbisoftInstalledPath -Path $installPathCandidate)) {
                                 # Check if we already have this game
                                 if (-not ($games | Where-Object { $_.GameId -eq $gameId })) {
                                     $games += [PSCustomObject]@{
@@ -139,7 +151,7 @@ function Get-UbisoftGameList {
                                         GameId         = $gameId
                                         ExecutablePath = $executablePath
                                         ManifestPath   = $metadataFile
-                                        InstallPath    = $gameDir
+                                        InstallPath    = $installPathCandidate
                                     }
                                 }
                                 break
@@ -188,7 +200,7 @@ function Get-UbisoftGameList {
             if ($installedGames) {
                 foreach ($game in $installedGames.PSObject.Properties) {
                     $gameData = $game.Value
-                    if ($gameData -and $gameData.DisplayName) {
+                    if ($gameData -and $gameData.DisplayName -and (Test-UbisoftInstalledPath -Path $gameData.InstallPath)) {
                         $games += [PSCustomObject]@{
                             DisplayName    = $gameData.DisplayName
                             GameId         = $game.Name
@@ -227,7 +239,7 @@ function Sync-UbisoftGames {
         return
     }
 
-    $games = @(Get-UbisoftGameList -PreferredLibraryRoot $UbisoftInstall | Sort-Object DisplayName)
+    $games = @(Get-UbisoftGameList -PreferredLibraryRoot $ubisoftInstall | Sort-Object DisplayName)
     
     if ($games.Count -eq 0) {
         Write-Host "  [SKIP]    No Ubisoft games found" -ForegroundColor DarkYellow
@@ -324,10 +336,13 @@ function Sync-UbisoftGames {
             if ($gameExe) { $gameExe.FullName } else { $null }
         }
 
+        # Never persist a missing icon path in the shortcut.
+        $resolvedIconFile = if ($iconFile -and (Test-Path -LiteralPath $iconFile)) { $iconFile } else { $null }
+
         if (-not (Test-Path $shortcutPath)) {
             # Create missing shortcut
             Write-Host "  [CREATE]  $($game.DisplayName)" -ForegroundColor Green
-            Write-UrlFile -Path $shortcutPath -Url $launchUrl -IconFile $iconFile
+            Write-UrlFile -Path $shortcutPath -Url $launchUrl -IconFile $resolvedIconFile
         } else {
             # Shortcut exists: check icon is still valid
             $currentIcon = Get-ShortcutIconPath -Path $shortcutPath -Type 'url'
@@ -335,15 +350,13 @@ function Sync-UbisoftGames {
             
             if (-not $needsFix) {
                 Write-Host "  [OK]      $($game.DisplayName)" -ForegroundColor DarkGray
-            } elseif ($iconFile -and (Test-Path $iconFile)) {
+            } elseif ($resolvedIconFile) {
                 Write-Host "  [FIX]     $($game.DisplayName)" -ForegroundColor Yellow
-                Set-UrlIconFile -Path $shortcutPath -IconFile $iconFile
-            } elseif ($iconFile) {
-                Write-Host "  [SKIP]    $($game.DisplayName) - icon file not found" -ForegroundColor DarkYellow
+                Set-UrlIconFile -Path $shortcutPath -IconFile $resolvedIconFile
             } else {
-                # No new icon, but current is broken, remove it
-                if ($currentIcon -and (-not (Test-Path $currentIcon))) {
-                    Write-Host "  [FIX]     $($game.DisplayName) - removing broken icon" -ForegroundColor Yellow
+                # No valid icon available. Remove stale icon references.
+                if ($currentIcon) {
+                    Write-Host "  [FIX]     $($game.DisplayName) - removing missing icon" -ForegroundColor Yellow
                     Set-UrlIconFile -Path $shortcutPath -IconFile ''
                 } else {
                     Write-Host "  [SKIP]    $($game.DisplayName) - no icon available" -ForegroundColor DarkYellow
