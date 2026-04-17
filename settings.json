@@ -6,7 +6,7 @@
     "ubisoftInstall": "S:\\ubisoft",
     "battleNetInstall": "",
     "gogInstall": "",
-    "itchInstall": "%APPDATA%\\itch\\apps",
+    "itchInstall": "C:\\games",
     "eaAppInstall": "",
     "rockstarInstall": "",
     "gamesMenu": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Games",

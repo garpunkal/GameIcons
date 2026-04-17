@@ -34,6 +34,8 @@ function Get-ItchIoGameList {
     $games = @()
     $seen = @{}
 
+
+    # Recursively scan all subfolders under the library root for .exe files, grouping by top-level folder
     Get-ChildItem -Path $PreferredLibraryRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
         $gameFolder = $_
         $displayName = $gameFolder.Name -replace '_', ' '
@@ -42,11 +44,14 @@ function Get-ItchIoGameList {
             return
         }
 
+
+        # Find all .exe files under this game folder (any depth)
         $exeCandidates = Get-ChildItem -Path $gameFolder.FullName -Recurse -Filter '*.exe' -File -ErrorAction SilentlyContinue |
             Where-Object {
-                $_.FullName -notmatch '(?i)\\\.itch\\' -and
+                $_.FullName -notmatch '(?i)\\.itch\\' -and
                 $_.Name -notmatch '(?i)unins|uninstall|setup|crash|updater|itch|butler|prereq|redist'
             }
+
 
         $exePath = ($exeCandidates |
             Sort-Object Length -Descending |
@@ -141,36 +146,9 @@ function Sync-ItchIoGames {
 
     foreach ($game in $games) {
         $safeName = Get-SafeFilename -Name $game.DisplayName
-        $legacySafeName = $safeName -replace ' ', '_'
         $shortcutPath = Join-Path $ItchMenu "$safeName.lnk"
-        $legacyShortcutPath = Join-Path $ItchMenu "$legacySafeName.lnk"
-
-        if ((-not (Test-Path $shortcutPath)) -and (Test-Path $legacyShortcutPath)) {
-            Write-Host "  [MIGRATE] Renaming legacy shortcut $legacySafeName.lnk -> $safeName.lnk" -ForegroundColor Cyan
-            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Rename legacy shortcut')) {
-                Rename-Item -Path $legacyShortcutPath -NewName (Split-Path $shortcutPath -Leaf) -Force
-            }
-        }
-
-        if ((Test-Path $shortcutPath) -and (Test-Path $legacyShortcutPath) -and ($legacyShortcutPath -ne $shortcutPath)) {
-            Write-Host "  [REMOVE] Duplicate legacy shortcut $legacySafeName.lnk" -ForegroundColor Red
-            if ($PSCmdlet.ShouldProcess($legacyShortcutPath, 'Remove duplicate shortcut')) {
-                Remove-Item -LiteralPath $legacyShortcutPath -Force
-            }
-        }
-
-        $customIco = Get-CustomIcoPath -SafeName $safeName -CustomIconsPath $CustomIconsPath
-        $iconFile = if ($customIco) { $customIco } else { $game.ExePath }
-
-        if (-not (Test-Path $shortcutPath)) {
-            if (Test-Path $game.ExePath) {
-                Write-Host "  [CREATE]  $($game.DisplayName)" -ForegroundColor Green
-                Write-LnkShortcut -Path $shortcutPath -Target $game.ExePath -Arguments '' -IconFile $iconFile -Description $itchDescription
-            } else {
-                Write-Host "  [SKIP]    $($game.DisplayName) - executable not found: $($game.ExePath)" -ForegroundColor DarkYellow
-            }
-            continue
-        }
+        $customIco = if ($CustomIconsPath) { Join-Path $CustomIconsPath "$safeName.ico" } else { '' }
+        $iconFile = if ($customIco -and (Test-Path $customIco)) { $customIco } else { $game.ExePath }
 
         $shortcutInfo = Get-ItchIoShortcutInfo -Path $shortcutPath
         $currentTarget = $shortcutInfo.TargetPath
