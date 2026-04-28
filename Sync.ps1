@@ -108,8 +108,6 @@ foreach ($file in $partialFiles) {
     }
 }
 
-
-
 ###############################################################################
 
 ###############################################################################
@@ -166,21 +164,17 @@ if (-not $SkipIconCacheRefresh) {
     try {
         Write-Host "`n=== Refresh Icon Cache ===" -ForegroundColor Blue
 
-        if ($PSCmdlet.ShouldProcess('Windows shell icon cache', 'Refresh icon cache')) {
-            $ie4uinitPath = Join-Path $env:SystemRoot 'System32\ie4uinit.exe'
-            if (Test-Path $ie4uinitPath) {
-                & $ie4uinitPath -show
-                Write-Host "  Icon cache refresh triggered." -ForegroundColor DarkGray
-            } else {
-                Write-Host "  [SKIP]    Icon cache refresh tool not found: $ie4uinitPath" -ForegroundColor DarkYellow
-            }
+        $ie4uinitPath = Join-Path $env:SystemRoot 'System32\ie4uinit.exe'
+        if (Test-Path $ie4uinitPath) {
+            & $ie4uinitPath -show
+            Write-Host "  Icon cache refresh triggered." -ForegroundColor DarkGray
+        } else {
+            Write-Host "  [SKIP]    Icon cache refresh tool not found: $ie4uinitPath" -ForegroundColor DarkYellow
         }
 
         if (-not $SkipExplorerRestart) {
-            if ($PSCmdlet.ShouldProcess('Explorer shell', 'Restart Explorer')) {
-                Stop-Process -Name explorer -Force -ErrorAction Stop
-                Write-Host "  Explorer restart triggered (Windows will relaunch the shell)." -ForegroundColor DarkGray
-            }
+            Stop-Process -Name explorer -Force -ErrorAction Stop
+            Write-Host "  Explorer restart triggered (Windows will relaunch the shell)." -ForegroundColor DarkGray
         }
     } catch {
         Write-Host "  [SKIP]    Shell refresh/restart failed: $($_.Exception.Message)" -ForegroundColor DarkYellow
