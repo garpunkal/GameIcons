@@ -27,7 +27,6 @@
 .EXAMPLE
     .\Sync.ps1 -WhatIf
 #>
-[CmdletBinding(SupportsShouldProcess)]
 param(
     [string]$GamesMenu       = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Games",
     [switch]$SkipIconCacheRefresh,
@@ -70,6 +69,7 @@ $RockstarMenu            = $GamesMenu
 $UseGamesFolderForAll    = $false
 $UseSteamFolderForAll    = $false
 
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 
@@ -95,6 +95,10 @@ $partialFiles = @(
     'Platforms\Rockstar.ps1'
 )
 
+# Add CustomApps as a platform
+$partialFiles += 'Platforms\CustomApps.ps1'
+
+
 foreach ($file in $partialFiles) {
     $partialPath = Join-Path $partialsPath $file
     if (Test-Path $partialPath) {
@@ -104,9 +108,17 @@ foreach ($file in $partialFiles) {
     }
 }
 
+
+
+###############################################################################
+
 ###############################################################################
 # ORCHESTRATION: Run platform sync functions
 ###############################################################################
+
+
+# Sync Custom Apps as a platform
+Sync-CustomApps -CustomAppsMenu $GamesMenu -CustomIconsPath $CustomIconsPath -SettingsPath $SettingsPath
 
 # Sync Steam games
 Sync-SteamGames -SteamInstall $SteamInstall -SteamMenu $SteamMenu `

@@ -14,6 +14,20 @@
     "steamGridDbCache": "SteamGridDbCache",
     "customIconsPath": "CustomIcons"
   },
+  "customApps": [
+    {
+      "name": "Prism Launcher",
+      "target": "C:/Users/garpu/AppData/Local/Programs/PrismLauncher/prismlauncher.exe",
+      "icon": "",
+      "type": "lnk"
+    },
+    {
+      "name": "MCServerSoft",
+      "target": "S:/Minecraft/MCServerSoft/mcss.exe",
+      "icon": "",
+      "type": "lnk"
+    }
+  ],
   "steamNonGameIds": [
     "228980",
     "1070560",

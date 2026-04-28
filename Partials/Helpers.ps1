@@ -37,10 +37,29 @@ function Get-CustomIcoPath {
         if (Test-Path $icoOverride) { return $icoOverride }
 
         $pngOverride = Join-Path $CustomIconsPath "$name.png"
-        if (Test-Path $pngOverride) {
-            if ($PSCmdlet.ShouldProcess($icoOverride, 'Convert PNG to ICO')) {
-                ConvertImageToIco -SourcePath $pngOverride -DestPath $icoOverride
+        $svgOverride = Join-Path $CustomIconsPath "$name.svg"
+
+        # SVG to PNG (if SVG exists and PNG does not)
+        if ((Test-Path $svgOverride) -and -not (Test-Path $pngOverride)) {
+            Write-Host "  [INFO]     Converting SVG to PNG: $svgOverride -> $pngOverride" -ForegroundColor DarkGray
+            # Try Inkscape first
+            $inkscape = Get-Command inkscape -ErrorAction SilentlyContinue
+            if ($inkscape) {
+                & $inkscape $svgOverride --export-type=png --export-filename=$pngOverride
+            } else {
+                # Try ImageMagick (magick)
+                $magick = Get-Command magick -ErrorAction SilentlyContinue
+                if ($magick) {
+                    & $magick convert $svgOverride $pngOverride
+                } else {
+                    Write-Host "  [WARN]    No SVG converter found (install Inkscape or ImageMagick)" -ForegroundColor Yellow
+                }
             }
+        }
+
+        # PNG to ICO
+        if (Test-Path $pngOverride) {
+            ConvertImageToIco -SourcePath $pngOverride -DestPath $icoOverride
             return $icoOverride
         }
     }
