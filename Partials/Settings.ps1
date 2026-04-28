@@ -71,6 +71,24 @@ if ($script:Settings.paths) {
     if ($script:Settings.paths.epicManifests -and -not $PSBoundParameters.ContainsKey('EpicManifests')) {
         $EpicManifests = [Environment]::ExpandEnvironmentVariables($script:Settings.paths.epicManifests)
     }
+    if ($script:Settings.paths.ubisoftInstall -and -not $PSBoundParameters.ContainsKey('UbisoftInstall')) {
+        $UbisoftInstall = [Environment]::ExpandEnvironmentVariables($script:Settings.paths.ubisoftInstall)
+    }
+    if ($script:Settings.paths.battleNetInstall -and -not $PSBoundParameters.ContainsKey('BattleNetInstall')) {
+        $BattleNetInstall = [Environment]::ExpandEnvironmentVariables($script:Settings.paths.battleNetInstall)
+    }
+    if ($script:Settings.paths.gogInstall -and -not $PSBoundParameters.ContainsKey('GogInstall')) {
+        $GogInstall = [Environment]::ExpandEnvironmentVariables($script:Settings.paths.gogInstall)
+    }
+    if ($script:Settings.paths.itchInstall -and -not $PSBoundParameters.ContainsKey('ItchInstall')) {
+        $ItchInstall = [Environment]::ExpandEnvironmentVariables($script:Settings.paths.itchInstall)
+    }
+    if ($script:Settings.paths.eaAppInstall -and -not $PSBoundParameters.ContainsKey('EaAppInstall')) {
+        $EaAppInstall = [Environment]::ExpandEnvironmentVariables($script:Settings.paths.eaAppInstall)
+    }
+    if ($script:Settings.paths.rockstarInstall -and -not $PSBoundParameters.ContainsKey('RockstarInstall')) {
+        $RockstarInstall = [Environment]::ExpandEnvironmentVariables($script:Settings.paths.rockstarInstall)
+    }
     if ($script:Settings.paths.PSObject.Properties['xboxMenu']?.Value -and -not $PSBoundParameters.ContainsKey('XboxMenu')) {
         $XboxMenu = [Environment]::ExpandEnvironmentVariables($script:Settings.paths.PSObject.Properties['xboxMenu'].Value)
     }
