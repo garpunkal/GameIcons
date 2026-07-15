@@ -56,7 +56,6 @@
     "E=ntdev@microsoft.com"
   ],
   "includeStorePackages": [
-    "TrivialTechnology.UltimateRummy500"
   ],
   "battleNetProductCodes": {
     "_comment": "Maps Battle.net display names (lowercase) to product codes used with --productcode= argument.",

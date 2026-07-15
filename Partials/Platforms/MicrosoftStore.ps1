@@ -41,7 +41,12 @@ function Sync-MicrosoftStoreGames {
     $storeGames = [System.Collections.Generic.List[object]]::new()
     foreach ($g in @(Get-UwpGameList -StoreOnly)) { $storeGames.Add($g) }
 
-    if ($IncludeStorePackages.Count -gt 0) {
+    $includeStorePackagePatterns = @(
+        $IncludeStorePackages |
+            Where-Object { $_ -and $_.ToString().Trim().Length -gt 0 }
+    )
+
+    if ($includeStorePackagePatterns.Count -gt 0) {
         $knownFamilyNames = $storeGames | ForEach-Object { $_.PackageFamilyName }
         $allPkgs = @()
         try {
@@ -53,7 +58,7 @@ function Sync-MicrosoftStoreGames {
         $allPkgs = $allPkgs |
             Group-Object PackageFamilyName |
             ForEach-Object { $_.Group | Select-Object -First 1 }
-        foreach ($pattern in $IncludeStorePackages) {
+        foreach ($pattern in $includeStorePackagePatterns) {
             $matched = $allPkgs | Where-Object { $_.Name -like $pattern -and -not $_.IsFramework -and -not $_.IsResourcePackage }
             foreach ($pkg in $matched) {
                 if ($knownFamilyNames -contains $pkg.PackageFamilyName) { continue }
