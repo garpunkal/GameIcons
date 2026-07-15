@@ -90,6 +90,7 @@ function Get-Settings {
     # Reads the consolidated JSON settings file.
     param([string]$Path)
     $defaults = @{
+        epicExcludedDisplayNames    = @()
         steamNonGameIds             = @()
         uwpServicePackageNames      = @()
         msPublisherPrefixes         = @()
@@ -110,7 +111,7 @@ function Get-Settings {
         return $defaults
     }
     # Simple arrays
-    foreach ($key in @('steamNonGameIds','uwpServicePackageNames','msPublisherPrefixes','includeStorePackages')) {
+    foreach ($key in @('epicExcludedDisplayNames','steamNonGameIds','uwpServicePackageNames','msPublisherPrefixes','includeStorePackages')) {
         if ($json.PSObject.Properties[$key]) {
             $defaults[$key] = @($json.$key)
         }

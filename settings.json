@@ -28,6 +28,9 @@
       "type": "lnk"
     }
   ],
+  "epicExcludedDisplayNames": [
+    "Cyberpunk 2077 Bonus Content"
+  ],
   "steamNonGameIds": [
     "228980",
     "1070560",

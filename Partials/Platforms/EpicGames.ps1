@@ -118,6 +118,8 @@ function Sync-EpicGames {
         if ($m.bIsIncompleteInstall)  { return }
         # Skip DLC/expansion entries that are children of another game
         if ($m.MainGameAppName -and ($m.MainGameAppName -ne $m.AppName)) { return }
+        # Skip entries excluded by display name in settings
+        if ($global:EpicExcludedDisplayNames -contains [string]$m.DisplayName) { return }
         if ($seen.ContainsKey($m.AppName)) { return }
         $seen[$m.AppName] = $true
 

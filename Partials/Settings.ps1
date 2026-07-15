@@ -141,6 +141,7 @@ if ($UseSteamFolderForAll -and -not $UseGamesFolderForAll) {
     $UbisoftMenu  = $SteamMenu
 }
 
+$global:EpicExcludedDisplayNames           = $script:Settings.epicExcludedDisplayNames
 $global:SteamNonGameIds                    = $script:Settings.steamNonGameIds
 $global:UwpServicePackageNames             = $script:Settings.uwpServicePackageNames
 $global:MsPublisherPrefixes                = $script:Settings.msPublisherPrefixes
