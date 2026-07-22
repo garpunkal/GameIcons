@@ -1,4 +1,5 @@
 function Sync-CustomApps {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [string]$CustomAppsMenu,
         [string]$CustomIconsPath,
@@ -10,6 +11,20 @@ function Sync-CustomApps {
         foreach ($app in $settings.customApps) {
             $shortcutName = $app.name
             $shortcutPath = Join-Path $CustomAppsMenu ("$shortcutName.lnk")
+
+            # For filesystem-backed custom apps, remove stale shortcuts when target is missing.
+            if ($app.type -eq 'lnk' -and (-not (Test-Path $app.target -PathType Leaf))) {
+                if (Test-Path $shortcutPath) {
+                    Write-Host ("  [REMOVE] $shortcutName (target not found)") -ForegroundColor Red
+                    if ($PSCmdlet.ShouldProcess($shortcutPath, 'Remove shortcut for missing custom app target')) {
+                        Remove-Item -LiteralPath $shortcutPath -Force
+                    }
+                } else {
+                    Write-Host ("  [SKIP]   $shortcutName (target not found)") -ForegroundColor DarkYellow
+                }
+                continue
+            }
+
             $iconPath = if ($app.icon) {
                 Join-Path $CustomIconsPath $app.icon
             } else {
