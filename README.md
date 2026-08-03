@@ -1,6 +1,6 @@
 # GameIcons
 
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/937e2839-05c8-43e0-96ad-7507d3b88e5c" />
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/dcc6b9cd-5be0-489b-a357-af1dceb2e006" />
 
 A PowerShell script that builds and maintains a single **Games** folder in your Windows Start Menu, pulling from every game launcher you have installed.
 
