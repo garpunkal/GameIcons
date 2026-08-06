@@ -2,6 +2,8 @@
 
 <img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/dcc6b9cd-5be0-489b-a357-af1dceb2e006" />
 
+Built with AI, tailored by me. 
+
 A PowerShell script that builds and maintains a single **Games** folder in your Windows Start Menu, pulling from every game launcher you have installed.
 
 It detects installed games, creates shortcuts with proper icons, repairs broken icon links, and removes stale shortcuts when games are uninstalled — all in one place.
