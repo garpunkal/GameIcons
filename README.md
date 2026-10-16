@@ -1,6 +1,6 @@
 # GameIcons
 
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/dcc6b9cd-5be0-489b-a357-af1dceb2e006" />
+![GameIcons ](Screenshots/logo.jpg)
 
 Built with AI, tailored by me. 
 

@@ -23,7 +23,13 @@
     },
     {
       "name": "MCServerSoft",
-      "target": "S:/Minecraft/MCServerSoft/mcss.exe",
+      "target": "C:\\minecraft\\server\\mcss\\mcss.exe",
+      "icon": "",
+      "type": "lnk"
+    },
+     {
+      "name": "MCA Selector",
+      "target": "C:\\Users\\garpu\\AppData\\Local\\Programs\\MCA Selector\\MCA Selector.exe",
       "icon": "",
       "type": "lnk"
     }
